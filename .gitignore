@@ -6,3 +6,4 @@ data
 .env
 .env.*
 .vercel
+!.env.example

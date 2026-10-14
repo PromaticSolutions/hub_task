@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { extractMentions, type Client, type Member, type Priority, type Status } from '../shared/types';
-import { db } from './db';
-import { addHistory, createTask } from './tasks';
+import { extractMentions, type Client, type Member, type Priority, type Status } from '../shared/types.js';
+import { addHistory, createTask } from './domain.js';
+import type { DbShape } from './store.js';
 
 function day(offset: number) {
   const d = new Date();
@@ -14,7 +14,7 @@ function daysAgo(n: number) {
 }
 
 /** Loads demonstration data. Only called when the database is completely empty. */
-export function loadSampleData() {
+export function loadSampleData(db: DbShape) {
   const members: Member[] = [
     ['Ana Souza', 'ana@empresa.com', 'Gerente de projetos', '#166534'],
     ['Bruno Lima', 'bruno@empresa.com', 'Designer', '#7c3aed'],
@@ -80,6 +80,7 @@ export function loadSampleData() {
 
   for (const s of seeds) {
     const task = createTask(
+      db,
       {
         title: s.title,
         description: s.description ?? '',

@@ -1,42 +1,12 @@
+import './env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { DATA_DIR, commit, db, isEmpty, snapshot } from './db';
-import { HttpError, errorHandler, send } from './http';
-import { peopleRouter } from './people';
-import { loadSampleData } from './sample';
-import { tasksRouter } from './tasks';
+import { app } from './app.js';
+import { errorHandler } from './http.js';
+import { getStore } from './store.js';
 
-const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
-
-app.disable('x-powered-by');
-app.use(express.json({ limit: '1mb' }));
-
-const api = express.Router();
-
-api.get('/health', (_req, res) => res.json({ ok: true }));
-api.get('/snapshot', (_req, res) => send(res, snapshot()));
-api.get('/version', (_req, res) => res.json({ version: db.version }));
-
-api.post('/sample-data', (_req, res) => {
-  if (!isEmpty()) throw new HttpError(409, 'Os dados de exemplo só podem ser carregados com o sistema vazio.');
-  loadSampleData();
-  commit();
-  send(res, snapshot(), 201);
-});
-
-api.get('/export', (_req, res) => {
-  const stamp = new Date().toISOString().slice(0, 10);
-  res.setHeader('Content-Disposition', `attachment; filename="hub-task-backup-${stamp}.json"`);
-  res.json({ exportedAt: new Date().toISOString(), ...snapshot() });
-});
-
-api.use(tasksRouter);
-api.use(peopleRouter);
-api.use((_req, _res, next) => next(new HttpError(404, 'Rota não encontrada.')));
-
-app.use('/api', api);
 
 // Serves the production build when it exists (npm run build && npm start).
 const dist = path.resolve(process.cwd(), 'dist');
@@ -55,14 +25,21 @@ if (hasBuild) {
 <p>Para servir tudo nesta porta, rode <code>npm run build</code> e depois <code>npm start</code>.</p></body></html>`);
   });
 }
-
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`API pronta em http://localhost:${PORT} (dados em ${DATA_DIR})`);
-  console.log(
-    hasBuild
-      ? `Interface disponível em http://localhost:${PORT}`
-      : 'Interface: abra o endereço "Local" mostrado pelo Vite (normalmente http://localhost:5173).',
-  );
-});
+getStore()
+  .then((store) => {
+    app.listen(PORT, () => {
+      const where = store.kind === 'postgres' ? 'Postgres (DATABASE_URL)' : `arquivo local em ${process.env.DATA_DIR ?? 'data/'}`;
+      console.log(`API pronta em http://localhost:${PORT} · dados: ${where}`);
+      console.log(
+        hasBuild
+          ? `Interface disponível em http://localhost:${PORT}`
+          : 'Interface: abra o endereço "Local" mostrado pelo Vite (normalmente http://localhost:5173).',
+      );
+    });
+  })
+  .catch((err) => {
+    console.error('Não foi possível iniciar o armazenamento de dados:', err instanceof Error ? err.message : err);
+    process.exit(1);
+  });

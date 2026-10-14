@@ -11,7 +11,7 @@ import type {
   TaskInput,
   TaskPatch,
 } from '../../shared/types';
-import { request, upload, type ApiResult } from '../lib/api';
+import { request, uploadAttachment, type ApiResult } from '../lib/api';
 
 interface DataState {
   status: 'loading' | 'ready' | 'error';
@@ -195,7 +195,15 @@ export const useData = create<DataState>()((set, get) => {
     },
 
     uploadAttachments: async (taskId, files, onProgress) => {
-      replaceTask(await mutate(() => upload<Task>(`/tasks/${taskId}/attachments`, files, onProgress)));
+      const total = files.reduce((n, f) => n + f.size, 0) || 1;
+      let done = 0;
+      for (const file of files) {
+        const task = await mutate(() =>
+          uploadAttachment<Task>(taskId, file, (ratio) => onProgress?.((done + ratio * file.size) / total)),
+        );
+        replaceTask(task);
+        done += file.size;
+      }
     },
 
     deleteAttachment: async (taskId, attachmentId) => {

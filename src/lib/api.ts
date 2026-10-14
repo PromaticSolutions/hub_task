@@ -51,35 +51,45 @@ export async function request<T>(method: string, url: string, body?: unknown): P
   return { data: (await res.json()) as T, version: version ? Number(version) : null };
 }
 
-/** Multipart upload with progress reporting (fetch has no upload progress events). */
-export function upload<T>(url: string, files: File[], onProgress?: (ratio: number) => void): Promise<ApiResult<T>> {
+/** Sends raw bytes to a (signed) upload URL with progress reporting — fetch has no upload progress events. */
+function putFile(url: string, file: File, headers: Record<string, string>, onProgress?: (ratio: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api${url}`);
-    if (actor) xhr.setRequestHeader('X-Actor-Id', actor);
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress?.(e.loaded / e.total);
     };
-    xhr.onerror = () => reject(new ApiError(0, 'Falha de conexão durante o envio.'));
+    xhr.onerror = () => reject(new ApiError(0, `Falha de conexão ao enviar "${file.name}".`));
     xhr.onload = () => {
-      let body: { error?: string } | T | null = null;
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      let message = `Erro ${xhr.status} ao enviar "${file.name}".`;
       try {
-        body = JSON.parse(xhr.responseText);
+        const body = JSON.parse(xhr.responseText);
+        message = body.error ?? body.message ?? message;
       } catch {
         /* non-JSON response */
       }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const version = xhr.getResponseHeader('x-data-version');
-        resolve({ data: body as T, version: version ? Number(version) : null });
-      } else {
-        const message = (body as { error?: string } | null)?.error ?? `Erro ${xhr.status} ao enviar arquivo.`;
-        reject(new ApiError(xhr.status, message));
-      }
+      reject(new ApiError(xhr.status, message));
     };
-    const form = new FormData();
-    files.forEach((f) => form.append('files', f, f.name));
-    xhr.send(form);
+    xhr.send(file);
   });
+}
+
+/**
+ * Uploads one attachment: the API signs an upload URL, the browser sends the bytes straight to
+ * storage (Supabase in production, so large files skip the serverless body limit), then the API registers it.
+ */
+export async function uploadAttachment<T>(taskId: string, file: File, onProgress?: (ratio: number) => void): Promise<ApiResult<T>> {
+  const meta = { name: file.name, size: file.size, mimeType: file.type || 'application/octet-stream' };
+  const { data: sign } = await request<{ storedName: string; uploadUrl: string; headers: Record<string, string> }>(
+    'POST',
+    `/tasks/${taskId}/attachments/sign`,
+    meta,
+  );
+  await putFile(sign.uploadUrl, file, sign.headers, onProgress);
+  return request<T>('POST', `/tasks/${taskId}/attachments`, { ...meta, storedName: sign.storedName });
 }
 
 export function errorMessage(err: unknown): string {

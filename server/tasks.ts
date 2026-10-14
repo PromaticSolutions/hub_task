@@ -1,21 +1,11 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Router } from 'express';
-import multer from 'multer';
+import express, { Router } from 'express';
 import { z } from 'zod';
-import {
-  PRIORITIES,
-  STATUSES,
-  extractMentions,
-  type HistoryEntry,
-  type HistoryType,
-  type Task,
-  type TaskInput,
-  type TaskPatch,
-} from '../shared/types';
-import { UPLOAD_DIR, commit, db, removeStoredFile } from './db';
-import { HttpError, actorId, notFound, parse, send } from './http';
+import { PRIORITIES, STATUSES, extractMentions } from '../shared/types.js';
+import { addHistory, applyPatch, createTask, deleteTaskById, findTask, now, rebalance } from './domain.js';
+import { MAX_FILE_SIZE, STORED_NAME, acceptLocalUpload, getFileStorage, newStoredName } from './files.js';
+import { HttpError, actorId, ah, notFound, parse, send } from './http.js';
+import { mutate, readState } from './store.js';
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'cor inválida');
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'data inválida');
@@ -48,351 +38,241 @@ const bulkSchema = z.object({
     z.object({ type: z.literal('delete') }),
   ]),
 });
-
-const now = () => new Date().toISOString();
-
-export function findTask(id: string): Task {
-  const task = db.tasks.find((t) => t.id === id);
-  if (!task) throw notFound('Tarefa');
-  return task;
-}
-
-function ensureMember(id: string | null | undefined, label: string) {
-  if (id && !db.members.some((m) => m.id === id)) throw new HttpError(400, `${label} não encontrado(a).`);
-}
-
-function ensureClient(id: string | null | undefined) {
-  if (id && !db.clients.some((c) => c.id === id)) throw new HttpError(400, 'Cliente não encontrado.');
-}
-
-function ensureParticipants(ids: string[] | undefined) {
-  ids?.forEach((id) => ensureMember(id, 'Participante'));
-}
-
-function cleanParticipants(ids: string[], assigneeId: string | null) {
-  return [...new Set(ids)].filter((id) => id !== assigneeId && db.members.some((m) => m.id === id));
-}
-
-export function addHistory(task: Task, type: HistoryType, actor: string | null, from: string | null, to: string | null) {
-  const entry: HistoryEntry = { id: randomUUID(), type, at: now(), actorId: actor, from, to };
-  task.history.push(entry);
-}
-
-function topOrder(status: Task['status']) {
-  const orders = db.tasks.filter((t) => t.status === status).map((t) => t.order);
-  return orders.length ? Math.min(...orders) - 1 : 0;
-}
-
-/** Re-spaces orders inside a column when fractional positions get too close. Returns true if anything changed. */
-function rebalance(status: Task['status']): boolean {
-  const column = db.tasks.filter((t) => t.status === status).sort((a, b) => a.order - b.order);
-  const tooClose = column.some((t, i) => i > 0 && t.order - column[i - 1].order < 1e-6);
-  if (!tooClose) return false;
-  column.forEach((t, i) => (t.order = i));
-  return true;
-}
-
-export function createTask(input: TaskInput, actor: string | null): Task {
-  ensureClient(input.clientId);
-  ensureMember(input.assigneeId, 'Responsável');
-  ensureParticipants(input.participantIds);
-  const scope = input.scope ?? 'team';
-  const ownerId = scope === 'personal' ? input.ownerId ?? actor : null;
-  if (scope === 'personal' && !ownerId) {
-    throw new HttpError(400, 'Para criar tarefas pessoais, selecione quem você é em Configurações.');
-  }
-  ensureMember(ownerId, 'Dono');
-  const assigneeId = input.assigneeId ?? null;
-  const status = input.status ?? 'todo';
-  const description = input.description ?? '';
-  const timestamp = now();
-  db.taskCounter += 1;
-  const task: Task = {
-    id: randomUUID(),
-    number: db.taskCounter,
-    title: input.title.trim(),
-    description,
-    descriptionMentions: extractMentions(description, db.members),
-    clientId: input.clientId ?? null,
-    color: input.color ?? null,
-    assigneeId,
-    participantIds: cleanParticipants(input.participantIds ?? [], assigneeId),
-    priority: input.priority ?? 'medium',
-    status,
-    order: input.order ?? topOrder(status),
-    scope,
-    ownerId,
-    onboarding: input.onboarding ?? false,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    createdBy: actor,
-    dueDate: input.dueDate ?? null,
-    completedAt: status === 'done' ? timestamp : null,
-    archived: false,
-    archivedAt: null,
-    attachments: [],
-    comments: [],
-    history: [],
-  };
-  addHistory(task, 'created', actor, null, status);
-  db.tasks.push(task);
-  return task;
-}
-
-/** Applies a patch, recording history for status, assignee, participants, due date and archiving. */
-function applyPatch(task: Task, patch: TaskPatch, actor: string | null) {
-  // Validate everything first so a rejected request never leaves partial changes in memory.
-  if (patch.clientId !== undefined) ensureClient(patch.clientId);
-  if (patch.assigneeId !== undefined) ensureMember(patch.assigneeId, 'Responsável');
-  ensureParticipants(patch.participantIds);
-  let personalOwner: string | null = null;
-  if (patch.scope === 'personal' && task.scope !== 'personal') {
-    personalOwner = patch.ownerId ?? task.ownerId ?? actor;
-    if (!personalOwner) throw new HttpError(400, 'Selecione quem você é em Configurações para tornar a tarefa pessoal.');
-    ensureMember(personalOwner, 'Dono');
-  }
-  const timestamp = now();
-
-  if (patch.title !== undefined) task.title = patch.title.trim();
-  if (patch.description !== undefined) {
-    task.description = patch.description;
-    task.descriptionMentions = extractMentions(patch.description, db.members);
-  }
-  if (patch.clientId !== undefined) task.clientId = patch.clientId;
-  if (patch.color !== undefined) task.color = patch.color;
-  if (patch.priority !== undefined) task.priority = patch.priority;
-  if (patch.onboarding !== undefined) task.onboarding = patch.onboarding;
-  if (patch.order !== undefined) task.order = patch.order;
-
-  if (patch.scope !== undefined && patch.scope !== task.scope) {
-    task.ownerId = patch.scope === 'personal' ? personalOwner : null;
-    task.scope = patch.scope;
-  }
-
-  if (patch.status !== undefined && patch.status !== task.status) {
-    addHistory(task, 'status', actor, task.status, patch.status);
-    task.status = patch.status;
-    task.completedAt = patch.status === 'done' ? timestamp : null;
-    if (patch.order === undefined) task.order = topOrder(patch.status);
-  }
-
-  if (patch.assigneeId !== undefined && patch.assigneeId !== task.assigneeId) {
-    addHistory(task, 'assignee', actor, task.assigneeId, patch.assigneeId);
-    task.assigneeId = patch.assigneeId;
-  }
-
-  const nextParticipants =
-    patch.participantIds !== undefined || patch.assigneeId !== undefined
-      ? cleanParticipants(patch.participantIds ?? task.participantIds, task.assigneeId)
-      : task.participantIds;
-  const before = [...task.participantIds].sort().join(',');
-  const after = [...nextParticipants].sort().join(',');
-  if (before !== after) {
-    addHistory(task, 'participants', actor, task.participantIds.join(','), nextParticipants.join(','));
-    task.participantIds = nextParticipants;
-  }
-
-  if (patch.dueDate !== undefined && patch.dueDate !== task.dueDate) {
-    addHistory(task, 'dueDate', actor, task.dueDate, patch.dueDate);
-    task.dueDate = patch.dueDate;
-  }
-
-  if (patch.archived !== undefined && patch.archived !== task.archived) {
-    addHistory(task, patch.archived ? 'archived' : 'restored', actor, null, null);
-    task.archived = patch.archived;
-    task.archivedAt = patch.archived ? timestamp : null;
-  }
-
-  task.updatedAt = timestamp;
-}
-
-export function deleteTaskById(id: string) {
-  const idx = db.tasks.findIndex((t) => t.id === id);
-  if (idx === -1) throw notFound('Tarefa');
-  const [task] = db.tasks.splice(idx, 1);
-  task.attachments.forEach((a) => removeStoredFile(a.storedName));
-}
-
-function copyAttachment(storedName: string): string {
-  const ext = path.extname(storedName);
-  const copy = `${randomUUID()}${ext}`;
-  fs.copyFileSync(path.join(UPLOAD_DIR, path.basename(storedName)), path.join(UPLOAD_DIR, copy));
-  return copy;
-}
-
-// defParamCharset keeps accented file names intact (supported by multer 2, missing from its typings).
-const uploadOptions: multer.Options & { defParamCharset: string } = {
-  storage: multer.diskStorage({
-    destination: UPLOAD_DIR,
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 12);
-      cb(null, `${randomUUID()}${ext}`);
-    },
-  }),
-  limits: { fileSize: 25 * 1024 * 1024, files: 10 },
-  defParamCharset: 'utf8',
-};
-const upload = multer(uploadOptions);
-
-/** Images that are safe to render inline; everything else (including SVG/HTML) is forced to download. */
-const INLINE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf']);
+const fileMetaSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  size: z.number().int().min(0).max(MAX_FILE_SIZE, 'arquivo maior que 25 MB'),
+  mimeType: z.string().max(200).default('application/octet-stream'),
+});
+const registerSchema = fileMetaSchema.extend({ storedName: z.string().regex(STORED_NAME, 'arquivo inválido') });
 
 export const tasksRouter = Router();
 
-tasksRouter.post('/tasks', (req, res) => {
-  const input = parse(taskInputSchema, req.body);
-  const task = createTask(input, actorId(req));
-  commit();
-  send(res, task, 201);
-});
+tasksRouter.post(
+  '/tasks',
+  ah(async (req, res) => {
+    const input = parse(taskInputSchema, req.body);
+    const { value, version } = await mutate((db) => createTask(db, input, actorId(req, db.members)));
+    send(res, value, version, 201);
+  }),
+);
 
-tasksRouter.patch('/tasks/:id', (req, res) => {
-  const patch = parse(taskPatchSchema, req.body);
-  const task = findTask(req.params.id);
-  applyPatch(task, patch, actorId(req));
-  const rebalanced = patch.order !== undefined && rebalance(task.status);
-  commit(rebalanced ? 2 : 1);
-  send(res, task);
-});
+tasksRouter.patch(
+  '/tasks/:id',
+  ah(async (req, res) => {
+    const patch = parse(taskPatchSchema, req.body);
+    const { value, version } = await mutate((db, ctx) => {
+      const task = findTask(db, req.params.id);
+      applyPatch(db, task, patch, actorId(req, db.members));
+      if (patch.order !== undefined && rebalance(db, task.status)) ctx.bump();
+      return task;
+    });
+    send(res, value, version);
+  }),
+);
 
-tasksRouter.post('/tasks/:id/duplicate', (req, res) => {
-  const source = findTask(req.params.id);
-  const actor = actorId(req);
-  const copy = createTask(
-    {
-      title: `${source.title} (cópia)`,
-      description: source.description,
-      clientId: source.clientId,
-      color: source.color,
-      assigneeId: source.assigneeId,
-      participantIds: source.participantIds,
-      priority: source.priority,
-      status: source.status,
-      order: source.order + 0.0001,
-      scope: source.scope,
-      ownerId: source.ownerId,
-      onboarding: source.onboarding,
-      dueDate: source.dueDate,
-    },
-    actor,
-  );
-  copy.history = [];
-  addHistory(copy, 'duplicated', actor, String(source.number), null);
-  copy.attachments = source.attachments.flatMap((a) => {
+tasksRouter.post(
+  '/tasks/:id/duplicate',
+  ah(async (req, res) => {
+    const storage = getFileStorage();
+    const { db: current } = await readState();
+    const source = findTask(current, req.params.id);
+    // Copy files first; the new task only references copies that actually exist.
+    const copies = new Map<string, string>();
+    for (const a of source.attachments) {
+      const target = newStoredName(a.name);
+      try {
+        await storage.copy(a.storedName, target);
+        copies.set(a.id, target);
+      } catch (err) {
+        console.error('Falha ao copiar anexo:', err);
+      }
+    }
     try {
-      return [{ ...a, id: randomUUID(), storedName: copyAttachment(a.storedName) }];
-    } catch {
-      return [];
+      const { value, version } = await mutate((db, ctx) => {
+        const src = findTask(db, req.params.id);
+        const actor = actorId(req, db.members);
+        const copy = createTask(
+          db,
+          {
+            title: `${src.title} (cópia)`,
+            description: src.description,
+            clientId: src.clientId,
+            color: src.color,
+            assigneeId: src.assigneeId,
+            participantIds: src.participantIds,
+            priority: src.priority,
+            status: src.status,
+            order: src.order + 0.0001,
+            scope: src.scope,
+            ownerId: src.ownerId,
+            onboarding: src.onboarding,
+            dueDate: src.dueDate,
+          },
+          actor,
+        );
+        copy.history = [];
+        addHistory(copy, 'duplicated', actor, String(src.number), null);
+        copy.attachments = src.attachments.flatMap((a) => {
+          const storedName = copies.get(a.id);
+          return storedName ? [{ ...a, id: randomUUID(), storedName }] : [];
+        });
+        if (rebalance(db, copy.status)) ctx.bump();
+        return copy;
+      });
+      send(res, value, version, 201);
+    } catch (err) {
+      await storage.remove([...copies.values()]).catch(() => undefined);
+      throw err;
     }
-  });
-  const rebalanced = rebalance(copy.status);
-  commit(rebalanced ? 2 : 1);
-  send(res, copy, 201);
-});
+  }),
+);
 
-tasksRouter.delete('/tasks/:id', (req, res) => {
-  deleteTaskById(req.params.id);
-  commit();
-  send(res, { ok: true });
-});
+tasksRouter.delete(
+  '/tasks/:id',
+  ah(async (req, res) => {
+    const { version } = await mutate((db, ctx) => {
+      const task = deleteTaskById(db, req.params.id);
+      const files = task.attachments.map((a) => a.storedName);
+      if (files.length) ctx.afterCommit(() => getFileStorage().remove(files));
+    });
+    send(res, { ok: true }, version);
+  }),
+);
 
-tasksRouter.post('/tasks/bulk', (req, res) => {
-  const { ids, action } = parse(bulkSchema, req.body);
-  const actor = actorId(req);
-  const tasks = ids.map(findTask);
-  if (action.type === 'delete') {
-    tasks.forEach((t) => deleteTaskById(t.id));
-  } else {
-    for (const task of tasks) {
-      if (action.type === 'status') applyPatch(task, { status: action.status }, actor);
-      if (action.type === 'assignee') applyPatch(task, { assigneeId: action.assigneeId }, actor);
-      if (action.type === 'archive') applyPatch(task, { archived: action.archived }, actor);
+tasksRouter.post(
+  '/tasks/bulk',
+  ah(async (req, res) => {
+    const { ids, action } = parse(bulkSchema, req.body);
+    const { value, version } = await mutate((db, ctx) => {
+      const actor = actorId(req, db.members);
+      const tasks = ids.map((id) => findTask(db, id));
+      if (action.type === 'delete') {
+        const files = tasks.flatMap((t) => deleteTaskById(db, t.id).attachments.map((a) => a.storedName));
+        if (files.length) ctx.afterCommit(() => getFileStorage().remove(files));
+        return [];
+      }
+      for (const task of tasks) {
+        if (action.type === 'status') applyPatch(db, task, { status: action.status }, actor);
+        if (action.type === 'assignee') applyPatch(db, task, { assigneeId: action.assigneeId }, actor);
+        if (action.type === 'archive') applyPatch(db, task, { archived: action.archived }, actor);
+      }
+      return tasks;
+    });
+    send(res, { tasks: value }, version);
+  }),
+);
+
+tasksRouter.post(
+  '/tasks/:id/comments',
+  ah(async (req, res) => {
+    const { body } = parse(commentSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      const task = findTask(db, req.params.id);
+      task.comments.push({
+        id: randomUUID(),
+        authorId: actorId(req, db.members),
+        body,
+        mentions: extractMentions(body, db.members),
+        createdAt: now(),
+      });
+      task.updatedAt = now();
+      return task;
+    });
+    send(res, value, version, 201);
+  }),
+);
+
+tasksRouter.delete(
+  '/tasks/:id/comments/:commentId',
+  ah(async (req, res) => {
+    const { value, version } = await mutate((db) => {
+      const task = findTask(db, req.params.id);
+      const before = task.comments.length;
+      task.comments = task.comments.filter((c) => c.id !== req.params.commentId);
+      if (task.comments.length === before) throw notFound('Comentário');
+      task.updatedAt = now();
+      return task;
+    });
+    send(res, value, version);
+  }),
+);
+
+/* ---------- Attachments: sign -> browser uploads the bytes -> register ---------- */
+
+tasksRouter.post(
+  '/tasks/:id/attachments/sign',
+  ah(async (req, res) => {
+    const meta = parse(fileMetaSchema, req.body);
+    const { db, version } = await readState();
+    findTask(db, req.params.id);
+    const storedName = newStoredName(meta.name);
+    const upload = await getFileStorage().signUpload(storedName);
+    send(res, { storedName, uploadUrl: upload.url, headers: upload.headers }, version);
+  }),
+);
+
+tasksRouter.post(
+  '/tasks/:id/attachments',
+  ah(async (req, res) => {
+    const meta = parse(registerSchema, req.body);
+    if (!(await getFileStorage().exists(meta.storedName))) {
+      throw new HttpError(400, 'O arquivo não foi recebido. Tente enviar novamente.');
     }
-  }
-  commit();
-  send(res, { tasks: action.type === 'delete' ? [] : tasks });
-});
-
-tasksRouter.post('/tasks/:id/comments', (req, res) => {
-  const { body } = parse(commentSchema, req.body);
-  const task = findTask(req.params.id);
-  task.comments.push({
-    id: randomUUID(),
-    authorId: actorId(req),
-    body,
-    mentions: extractMentions(body, db.members),
-    createdAt: now(),
-  });
-  task.updatedAt = now();
-  commit();
-  send(res, task, 201);
-});
-
-tasksRouter.delete('/tasks/:id/comments/:commentId', (req, res) => {
-  const task = findTask(req.params.id);
-  const before = task.comments.length;
-  task.comments = task.comments.filter((c) => c.id !== req.params.commentId);
-  if (task.comments.length === before) throw notFound('Comentário');
-  task.updatedAt = now();
-  commit();
-  send(res, task);
-});
-
-tasksRouter.post('/tasks/:id/attachments', (req, res, next) => {
-  findTask(req.params.id);
-  upload.array('files', 10)(req, res, (err?: unknown) => {
-    if (err) return next(err);
-    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
-    let task: Task;
-    try {
-      task = findTask(req.params.id);
-    } catch (e) {
-      files.forEach((f) => removeStoredFile(f.filename));
-      return next(e);
-    }
-    if (!files.length) return next(new HttpError(400, 'Nenhum arquivo enviado.'));
-    const actor = actorId(req);
-    for (const f of files) {
+    const { value, version } = await mutate((db) => {
+      const task = findTask(db, req.params.id);
+      if (db.tasks.some((t) => t.attachments.some((a) => a.storedName === meta.storedName))) {
+        throw new HttpError(409, 'Este arquivo já foi anexado.');
+      }
       task.attachments.push({
         id: randomUUID(),
-        name: f.originalname.slice(0, 255),
-        size: f.size,
-        mimeType: f.mimetype || 'application/octet-stream',
-        storedName: f.filename,
+        name: meta.name,
+        size: meta.size,
+        mimeType: meta.mimeType || 'application/octet-stream',
+        storedName: meta.storedName,
         uploadedAt: now(),
-        uploadedBy: actor,
+        uploadedBy: actorId(req, db.members),
       });
-    }
-    task.updatedAt = now();
-    commit();
-    send(res, task, 201);
-  });
-});
+      task.updatedAt = now();
+      return task;
+    });
+    send(res, value, version, 201);
+  }),
+);
 
-tasksRouter.delete('/tasks/:id/attachments/:attachmentId', (req, res) => {
-  const task = findTask(req.params.id);
-  const attachment = task.attachments.find((a) => a.id === req.params.attachmentId);
-  if (!attachment) throw notFound('Anexo');
-  task.attachments = task.attachments.filter((a) => a.id !== attachment.id);
-  removeStoredFile(attachment.storedName);
-  task.updatedAt = now();
-  commit();
-  send(res, task);
-});
+tasksRouter.delete(
+  '/tasks/:id/attachments/:attachmentId',
+  ah(async (req, res) => {
+    const { value, version } = await mutate((db, ctx) => {
+      const task = findTask(db, req.params.id);
+      const attachment = task.attachments.find((a) => a.id === req.params.attachmentId);
+      if (!attachment) throw notFound('Anexo');
+      task.attachments = task.attachments.filter((a) => a.id !== attachment.id);
+      task.updatedAt = now();
+      ctx.afterCommit(() => getFileStorage().remove([attachment.storedName]));
+      return task;
+    });
+    send(res, value, version);
+  }),
+);
 
-tasksRouter.get('/tasks/:id/attachments/:attachmentId', (req, res) => {
-  const task = findTask(req.params.id);
-  const attachment = task.attachments.find((a) => a.id === req.params.attachmentId);
-  if (!attachment) throw notFound('Anexo');
-  const file = path.join(UPLOAD_DIR, path.basename(attachment.storedName));
-  if (!fs.existsSync(file)) throw new HttpError(410, 'O arquivo deste anexo não está mais disponível.');
-  const inline = INLINE_TYPES.has(attachment.mimeType) && req.query.download === undefined;
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
-  res.setHeader('Content-Type', inline ? attachment.mimeType : 'application/octet-stream');
-  res.setHeader(
-    'Content-Disposition',
-    `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(attachment.name)}`,
-  );
-  res.sendFile(file);
+tasksRouter.get(
+  '/tasks/:id/attachments/:attachmentId',
+  ah(async (req, res) => {
+    const { db } = await readState();
+    const task = findTask(db, req.params.id);
+    const attachment = task.attachments.find((a) => a.id === req.params.attachmentId);
+    if (!attachment) throw notFound('Anexo');
+    await getFileStorage().sendDownload(res, attachment, req.query.download !== undefined);
+  }),
+);
+
+/** Receives file bytes for local development (in production the browser uploads straight to Supabase). */
+tasksRouter.put('/uploads/:storedName', express.raw({ type: () => true, limit: MAX_FILE_SIZE }), (req, res) => {
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  if (!acceptLocalUpload(req.params.storedName, token, body)) {
+    res.status(403).json({ error: 'Link de envio inválido ou expirado.' });
+    return;
+  }
+  res.status(201).json({ ok: true });
 });

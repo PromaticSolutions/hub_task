@@ -1,4 +1,16 @@
 {
+  // Root options are what Vercel's function builder type-checks api/ with; keep them in sync with tsconfig.server.json.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "strict": true,
+    "types": ["node"]
+  },
   "files": [],
   "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.server.json" }]
 }

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { PRIORITIES, type Client, type Member } from '../shared/types';
-import { commit, db } from './db';
-import { HttpError, actorId, notFound, parse, send } from './http';
-import { addHistory, createTask } from './tasks';
+import { PRIORITIES, type Client, type Member } from '../shared/types.js';
+import { addHistory, createTask } from './domain.js';
+import { HttpError, actorId, ah, notFound, parse, send } from './http.js';
+import { mutate } from './store.js';
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'cor inválida');
 const optionalText = (max: number) => z.string().trim().max(max).optional().default('');
@@ -61,122 +61,161 @@ function addDays(isoDay: string, days: number) {
 export const peopleRouter = Router();
 
 // ---------- Members ----------
-peopleRouter.post('/members', (req, res) => {
-  const input = parse(memberSchema, req.body);
-  if (nameTaken(db.members, input.name)) throw new HttpError(409, 'Já existe um membro com esse nome.');
-  const member: Member = { id: randomUUID(), ...input, createdAt: now() };
-  db.members.push(member);
-  commit();
-  send(res, member, 201);
-});
+peopleRouter.post(
+  '/members',
+  ah(async (req, res) => {
+    const input = parse(memberSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      if (nameTaken(db.members, input.name)) throw new HttpError(409, 'Já existe um membro com esse nome.');
+      const member: Member = { id: randomUUID(), ...input, createdAt: now() };
+      db.members.push(member);
+      return member;
+    });
+    send(res, value, version, 201);
+  }),
+);
 
-peopleRouter.patch('/members/:id', (req, res) => {
-  const member = db.members.find((m) => m.id === req.params.id);
-  if (!member) throw notFound('Membro');
-  const input = parse(memberSchema, req.body);
-  if (nameTaken(db.members, input.name, member.id)) throw new HttpError(409, 'Já existe um membro com esse nome.');
-  Object.assign(member, input);
-  commit();
-  send(res, member);
-});
+peopleRouter.patch(
+  '/members/:id',
+  ah(async (req, res) => {
+    const input = parse(memberSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      const member = db.members.find((m) => m.id === req.params.id);
+      if (!member) throw notFound('Membro');
+      if (nameTaken(db.members, input.name, member.id)) throw new HttpError(409, 'Já existe um membro com esse nome.');
+      Object.assign(member, input);
+      return member;
+    });
+    send(res, value, version);
+  }),
+);
 
-peopleRouter.delete('/members/:id', (req, res) => {
-  const idx = db.members.findIndex((m) => m.id === req.params.id);
-  if (idx === -1) throw notFound('Membro');
-  const [member] = db.members.splice(idx, 1);
-  const actor = actorId(req);
-  for (const task of db.tasks) {
-    if (task.assigneeId === member.id) {
-      addHistory(task, 'assignee', actor, member.id, null);
-      task.assigneeId = null;
-      task.updatedAt = now();
-    }
-    if (task.participantIds.includes(member.id)) {
-      const next = task.participantIds.filter((id) => id !== member.id);
-      addHistory(task, 'participants', actor, task.participantIds.join(','), next.join(','));
-      task.participantIds = next;
-      task.updatedAt = now();
-    }
-    // Personal tasks are kept as team tasks so no work is lost.
-    if (task.scope === 'personal' && task.ownerId === member.id) {
-      task.scope = 'team';
-      task.ownerId = null;
-      task.updatedAt = now();
-    }
-  }
-  commit();
-  send(res, { ok: true });
-});
+peopleRouter.delete(
+  '/members/:id',
+  ah(async (req, res) => {
+    const { version } = await mutate((db) => {
+      const idx = db.members.findIndex((m) => m.id === req.params.id);
+      if (idx === -1) throw notFound('Membro');
+      const actor = actorId(req, db.members);
+      const [member] = db.members.splice(idx, 1);
+      for (const task of db.tasks) {
+        if (task.assigneeId === member.id) {
+          addHistory(task, 'assignee', actor, member.id, null);
+          task.assigneeId = null;
+          task.updatedAt = now();
+        }
+        if (task.participantIds.includes(member.id)) {
+          const next = task.participantIds.filter((id) => id !== member.id);
+          addHistory(task, 'participants', actor, task.participantIds.join(','), next.join(','));
+          task.participantIds = next;
+          task.updatedAt = now();
+        }
+        // Personal tasks are kept as team tasks so no work is lost.
+        if (task.scope === 'personal' && task.ownerId === member.id) {
+          task.scope = 'team';
+          task.ownerId = null;
+          task.updatedAt = now();
+        }
+      }
+    });
+    send(res, { ok: true }, version);
+  }),
+);
 
 // ---------- Clients ----------
-peopleRouter.post('/clients', (req, res) => {
-  const input = parse(clientSchema, req.body);
-  if (nameTaken(db.clients, input.name)) throw new HttpError(409, 'Já existe um cliente com esse nome.');
-  const client: Client = { id: randomUUID(), ...input, createdAt: now() };
-  db.clients.push(client);
-  commit();
-  send(res, client, 201);
-});
+peopleRouter.post(
+  '/clients',
+  ah(async (req, res) => {
+    const input = parse(clientSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      if (nameTaken(db.clients, input.name)) throw new HttpError(409, 'Já existe um cliente com esse nome.');
+      const client: Client = { id: randomUUID(), ...input, createdAt: now() };
+      db.clients.push(client);
+      return client;
+    });
+    send(res, value, version, 201);
+  }),
+);
 
-peopleRouter.patch('/clients/:id', (req, res) => {
-  const client = db.clients.find((c) => c.id === req.params.id);
-  if (!client) throw notFound('Cliente');
-  const input = parse(clientSchema, req.body);
-  if (nameTaken(db.clients, input.name, client.id)) throw new HttpError(409, 'Já existe um cliente com esse nome.');
-  Object.assign(client, input);
-  commit();
-  send(res, client);
-});
+peopleRouter.patch(
+  '/clients/:id',
+  ah(async (req, res) => {
+    const input = parse(clientSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      const client = db.clients.find((c) => c.id === req.params.id);
+      if (!client) throw notFound('Cliente');
+      if (nameTaken(db.clients, input.name, client.id)) throw new HttpError(409, 'Já existe um cliente com esse nome.');
+      Object.assign(client, input);
+      return client;
+    });
+    send(res, value, version);
+  }),
+);
 
-peopleRouter.delete('/clients/:id', (req, res) => {
-  const idx = db.clients.findIndex((c) => c.id === req.params.id);
-  if (idx === -1) throw notFound('Cliente');
-  const [client] = db.clients.splice(idx, 1);
-  for (const task of db.tasks) {
-    if (task.clientId === client.id) {
-      task.clientId = null;
-      task.color = task.color ?? client.color;
-      task.updatedAt = now();
-    }
-  }
-  commit();
-  send(res, { ok: true });
-});
+peopleRouter.delete(
+  '/clients/:id',
+  ah(async (req, res) => {
+    const { version } = await mutate((db) => {
+      const idx = db.clients.findIndex((c) => c.id === req.params.id);
+      if (idx === -1) throw notFound('Cliente');
+      const [client] = db.clients.splice(idx, 1);
+      for (const task of db.tasks) {
+        if (task.clientId === client.id) {
+          task.clientId = null;
+          task.color = task.color ?? client.color;
+          task.updatedAt = now();
+        }
+      }
+    });
+    send(res, { ok: true }, version);
+  }),
+);
 
-peopleRouter.post('/clients/:id/onboarding', (req, res) => {
-  const client = db.clients.find((c) => c.id === req.params.id);
-  if (!client) throw notFound('Cliente');
-  const input = parse(onboardingSchema, req.body);
-  const steps = db.settings.onboardingTemplate.filter((s) => input.stepIds.includes(s.id));
-  if (!steps.length) throw new HttpError(400, 'Nenhuma etapa válida selecionada.');
-  if (input.assigneeId && !db.members.some((m) => m.id === input.assigneeId)) {
-    throw new HttpError(400, 'Responsável não encontrado(a).');
-  }
-  const actor = actorId(req);
-  // Steps are created bottom-up so the first step ends up at the top of "A Fazer".
-  const created = [...steps].reverse().map((step) =>
-    createTask(
-      {
-        title: step.title,
-        description: step.description,
-        clientId: client.id,
-        assigneeId: input.assigneeId,
-        priority: step.priority,
-        status: 'todo',
-        onboarding: true,
-        dueDate: addDays(input.startDate, step.offsetDays),
-      },
-      actor,
-    ),
-  );
-  commit();
-  send(res, { tasks: created.reverse() }, 201);
-});
+peopleRouter.post(
+  '/clients/:id/onboarding',
+  ah(async (req, res) => {
+    const input = parse(onboardingSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      const client = db.clients.find((c) => c.id === req.params.id);
+      if (!client) throw notFound('Cliente');
+      const steps = db.settings.onboardingTemplate.filter((s) => input.stepIds.includes(s.id));
+      if (!steps.length) throw new HttpError(400, 'Nenhuma etapa válida selecionada.');
+      if (input.assigneeId && !db.members.some((m) => m.id === input.assigneeId)) {
+        throw new HttpError(400, 'Responsável não encontrado(a).');
+      }
+      const actor = actorId(req, db.members);
+      // Steps are created bottom-up so the first step ends up at the top of "A Fazer".
+      const created = [...steps].reverse().map((step) =>
+        createTask(
+          db,
+          {
+            title: step.title,
+            description: step.description,
+            clientId: client.id,
+            assigneeId: input.assigneeId,
+            priority: step.priority,
+            status: 'todo',
+            onboarding: true,
+            dueDate: addDays(input.startDate, step.offsetDays),
+          },
+          actor,
+        ),
+      );
+      return created.reverse();
+    });
+    send(res, { tasks: value }, version, 201);
+  }),
+);
 
 // ---------- Settings ----------
-peopleRouter.put('/settings', (req, res) => {
-  const input = parse(settingsSchema, req.body);
-  db.settings = { ...db.settings, ...input };
-  commit();
-  send(res, db.settings);
-});
+peopleRouter.put(
+  '/settings',
+  ah(async (req, res) => {
+    const input = parse(settingsSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      db.settings = { ...db.settings, ...input };
+      return db.settings;
+    });
+    send(res, value, version);
+  }),
+);

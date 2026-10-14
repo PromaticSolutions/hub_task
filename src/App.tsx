@@ -121,8 +121,12 @@ function ErrorScreen({ message }: { message: string }) {
         description={
           <>
             {message}
-            <br />
-            Inicie o servidor com <code>npm run dev</code> e tente novamente.
+            {import.meta.env.DEV && (
+              <>
+                <br />
+                Inicie o servidor com <code>npm run dev</code> e tente novamente.
+              </>
+            )}
           </>
         }
         actions={

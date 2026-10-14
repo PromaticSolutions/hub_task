@@ -4,7 +4,7 @@ Sistema interno de gerenciamento de tarefas inspirado no Trello: quadro Kanban, 
 
 ## Como rodar
 
-Requisitos: Node.js 20 ou superior.
+Requisitos: Node.js 20 ou superior. Sem configuração extra, os dados ficam no arquivo local `data/db.json`.
 
 ```bash
 npm install
@@ -23,25 +23,59 @@ O `npm run dev` abre o navegador sozinho. Deixe o terminal aberto enquanto usa o
 - Se a porta 5173 estiver ocupada, o Vite usa a próxima (5174, 5175…). Use o endereço que aparece na linha `Local:` do terminal.
 - Se aparecer `EADDRINUSE` para a porta 3001, já existe outro servidor rodando. Feche-o ou rode com outra porta: `PORT=3002 npm run dev`.
 
-### Produção (um único processo)
+## Deploy na Vercel com Supabase
+
+Na Vercel não existe disco permanente, então em produção os dados ficam no **Postgres do Supabase** e os anexos no **Storage do Supabase**. O código já está pronto para isso. Você só precisa criar o projeto e configurar três variáveis.
+
+1. **Supabase:** crie um projeto em https://supabase.com. Se a equipe está no Brasil, escolha a região *South America (São Paulo)*. Anote a senha do banco.
+2. **Vercel:** em *Add New → Project*, importe o repositório. O `vercel.json` já define o build, a API e as rotas; não precisa mudar nada.
+3. **Variáveis de ambiente** (Vercel → *Settings → Environment Variables*):
+
+   | Variável | Onde encontrar no Supabase |
+   | --- | --- |
+   | `DATABASE_URL` | Botão **Connect** → *Transaction pooler* (porta 6543). Troque `[YOUR-PASSWORD]` pela senha do banco. |
+   | `SUPABASE_URL` | *Project Settings → API* → Project URL |
+   | `SUPABASE_SERVICE_ROLE_KEY` | *Project Settings → API* → chave `service_role` (ou *secret key*). Fica só no servidor; nunca coloque no frontend. |
+
+   Se você conectar o Supabase pela integração da Vercel, ela cria `POSTGRES_URL`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` sozinha, e o sistema aceita esses nomes.
+4. **Região das funções** (Vercel → *Settings → Functions*): escolha a mesma região do Supabase (São Paulo = `gru1`). Com regiões diferentes, cada gravação fica bem mais lenta.
+5. Faça o deploy (ou *Redeploy*, se as variáveis foram criadas depois do primeiro deploy). No primeiro acesso, o sistema cria sozinho as tabelas (`members`, `clients`, `tasks`, `app_settings`, `app_meta`, com RLS ativado) e o bucket privado `attachments`.
+
+Para conferir: `https://SEU-SITE.vercel.app/api/health` deve responder `{"ok":true,"storage":"postgres"}`.
+
+### Levar os dados locais para o Supabase
+
+Se você já usou o sistema localmente e quer manter esses dados:
+
+```bash
+cp .env.example .env   # preencha DATABASE_URL, SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY
+npm run db:import      # copia data/db.json e data/uploads/ para o Supabase
+```
+
+A importação só roda se o banco do Supabase estiver vazio, então nunca sobrescreve dados.
+
+### Desenvolvimento local usando o Supabase
+
+Com um arquivo `.env` preenchido (veja `.env.example`), `npm run dev` passa a usar o Supabase em vez do arquivo local.
+
+### Servidor próprio (um único processo)
 
 ```bash
 npm run build   # verifica os tipos e gera dist/
 npm start       # serve a API e a interface em http://localhost:3001
 ```
 
-Variáveis de ambiente opcionais:
-
-| Variável   | Padrão   | Uso                                 |
-| ---------- | -------- | ----------------------------------- |
-| `PORT`     | `3001`   | Porta da API (e da interface em produção) |
-| `DATA_DIR` | `./data` | Pasta do banco de dados e dos anexos |
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `PORT` | `3001` | Porta da API (e da interface com `npm start`) |
+| `DATA_DIR` | `./data` | Pasta do arquivo de dados e dos anexos, quando o Supabase não está configurado |
 
 ## Dados
 
-- Tudo fica em `data/db.json` (tarefas, clientes, membros, configurações) e os anexos em `data/uploads/`. Os dados são compartilhados por todos que acessam o mesmo servidor.
-- As gravações são atômicas (arquivo temporário + renomeação). Se o `db.json` estiver corrompido, o servidor **não inicia** em vez de sobrescrevê-lo.
-- Backup: **Configurações → Dados → Exportar backup** (JSON). Os arquivos anexados não entram no JSON; copie também `data/uploads/`.
+- **Com Supabase** (`DATABASE_URL` definida): tabelas no Postgres e anexos no Storage. Cada gravação roda numa transação com trava, então alterações simultâneas de pessoas diferentes nunca se perdem.
+- **Sem Supabase** (desenvolvimento): tudo fica em `data/db.json` e os anexos em `data/uploads/`. As gravações são atômicas (arquivo temporário + renomeação). Se o `db.json` estiver corrompido, o servidor **não inicia**, em vez de sobrescrevê-lo.
+- Os anexos vão do navegador direto para o armazenamento, por um link de envio assinado. Por isso o limite é de 25 MB por arquivo, e não o limite de 4,5 MB por requisição da Vercel.
+- Backup: **Configurações → Dados → Exportar backup** (JSON). Os arquivos anexados não entram no JSON.
 - Na primeira execução o sistema começa vazio. A tela inicial oferece **Carregar dados de exemplo** (só funciona com o sistema vazio).
 
 ## Primeiros passos
@@ -78,7 +112,13 @@ Atalhos: `N` nova tarefa · `/` buscar · `V` alternar visualização · `Ctrl+S
 ## Estrutura
 
 ```
-server/   API Express (db.ts: armazenamento JSON; tasks.ts e people.ts: rotas e regras; sample.ts: dados de exemplo)
+api/      Função da Vercel (encaminha /api/* para o Express)
+server/   API Express
+  app.ts          rotas montadas (usado pelo servidor local e pela Vercel)
+  domain.ts       regras das tarefas (histórico, participantes, ordem)
+  tasks.ts, people.ts   rotas
+  store*.ts       armazenamento: Postgres/Supabase ou arquivo local
+  files.ts        anexos: Supabase Storage ou disco local
 shared/   Tipos e regras usados pelo servidor e pela interface
 src/      Interface React
   store/       estado (dados do servidor com atualização otimista; preferências do navegador)
@@ -89,6 +129,6 @@ src/      Interface React
 
 ## Limitações desta versão
 
-- **Sem autenticação.** Qualquer pessoa com acesso ao servidor pode ver e alterar tudo, e a identidade escolhida em "Quem é você?" não é verificada. Use apenas em rede interna confiável.
+- **Sem autenticação.** Qualquer pessoa com o link pode ver e alterar tudo, e a identidade escolhida em "Quem é você?" não é verificada. Na Vercel, o site fica público na internet: não compartilhe o endereço fora da equipe. Para restringir o acesso sem mexer no código, dá para usar a *Deployment Protection* da Vercel.
 - Tarefas pessoais ficam fora dos quadros da equipe, mas não são privadas no servidor.
-- O armazenamento em arquivo JSON atende bem uma equipe pequena; para muitos usuários simultâneos ou grandes volumes, migre para um banco de dados.
+- Cada gravação lê os dados atuais e grava em sequência (uma por vez). Isso é simples e seguro para uma equipe pequena; com milhares de tarefas ou muitas pessoas gravando ao mesmo tempo, vale migrar para consultas por tarefa.
