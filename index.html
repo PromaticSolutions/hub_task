@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Gerenciamento interno de tarefas da equipe" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Hub Task Timely</title>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('htt-prefs');
+          var theme = raw ? JSON.parse(raw).state.theme : 'system';
+          if (theme !== 'light' && theme !== 'dark') {
+            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.dataset.theme = theme;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
+    <style>
+      /* Shown until React mounts (and as a hint when the app cannot load at all). */
+      /* :where() keeps these at zero specificity so the app's own theme styles win once loaded. */
+      :where(html[data-theme='light']) body { background: #f1f5f2; color: #12211a; }
+      :where(html[data-theme='dark']) body { background: #0c1410; color: #e8f0eb; }
+      #boot {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        text-align: center;
+      }
+      #boot .box { max-width: 520px; line-height: 1.55; }
+      #boot .title { font-size: 17px; font-weight: 650; margin: 0 0 8px; }
+      #boot .help { display: none; margin-top: 14px; font-size: 14px; }
+      #boot.failed .help { display: block; }
+      #boot code {
+        padding: 2px 6px;
+        border-radius: 5px;
+        background: rgba(127, 140, 133, 0.2);
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="boot">
+        <div class="box">
+          <p class="title">Carregando Hub Task Timely…</p>
+          <div class="help">
+            <p>O arquivo <code>index.html</code> não funciona aberto direto no navegador (duplo clique, pré-visualização do editor ou Live Server).</p>
+            <p>No terminal, dentro da pasta do projeto, rode <code>npm install</code> (só na primeira vez) e depois <code>npm run dev</code>. Em seguida, abra <strong>http://localhost:5173</strong>.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var boot = document.getElementById('boot');
+        function fail() {
+          if (!document.getElementById('boot')) return;
+          boot.classList.add('failed');
+          boot.querySelector('.title').textContent = 'A interface não carregou';
+        }
+        if (location.protocol === 'file:') fail();
+        else setTimeout(fail, 8000);
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
