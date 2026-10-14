@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { PRIORITIES, type Client, type Member } from '../shared/types.js';
-import { addHistory, createTask } from './domain.js';
+import { PRIORITIES, PROJECT_STATUSES, type Client, type Member, type Project } from '../shared/types.js';
+import { addHistory, createTask, ensureClient } from './domain.js';
 import { HttpError, actorId, ah, notFound, parse, send } from './http.js';
 import { mutate } from './store.js';
 
@@ -23,6 +23,14 @@ const clientSchema = z.object({
   email: z.union([z.literal(''), z.string().trim().email('e-mail inválido')]).optional().default(''),
   phone: optionalText(40),
   notes: optionalText(2000),
+});
+
+const projectSchema = z.object({
+  name: z.string().trim().min(1, 'informe o nome').max(100),
+  color: hex,
+  description: optionalText(2000),
+  clientId: z.string().nullable().optional().default(null),
+  status: z.enum(PROJECT_STATUSES).optional().default('active'),
 });
 
 const settingsSchema = z.object({
@@ -159,6 +167,9 @@ peopleRouter.delete(
       const idx = db.clients.findIndex((c) => c.id === req.params.id);
       if (idx === -1) throw notFound('Cliente');
       const [client] = db.clients.splice(idx, 1);
+      for (const project of db.projects) {
+        if (project.clientId === client.id) project.clientId = null;
+      }
       for (const task of db.tasks) {
         if (task.clientId === client.id) {
           task.clientId = null;
@@ -204,6 +215,57 @@ peopleRouter.post(
       return created.reverse();
     });
     send(res, { tasks: value }, version, 201);
+  }),
+);
+
+// ---------- Projects ----------
+peopleRouter.post(
+  '/projects',
+  ah(async (req, res) => {
+    const input = parse(projectSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      if (nameTaken(db.projects, input.name)) throw new HttpError(409, 'Já existe um projeto com esse nome.');
+      ensureClient(db, input.clientId);
+      const project: Project = { id: randomUUID(), ...input, createdAt: now() };
+      db.projects.push(project);
+      return project;
+    });
+    send(res, value, version, 201);
+  }),
+);
+
+peopleRouter.patch(
+  '/projects/:id',
+  ah(async (req, res) => {
+    const input = parse(projectSchema, req.body);
+    const { value, version } = await mutate((db) => {
+      const project = db.projects.find((p) => p.id === req.params.id);
+      if (!project) throw notFound('Projeto');
+      if (nameTaken(db.projects, input.name, project.id)) throw new HttpError(409, 'Já existe um projeto com esse nome.');
+      ensureClient(db, input.clientId);
+      Object.assign(project, input);
+      return project;
+    });
+    send(res, value, version);
+  }),
+);
+
+peopleRouter.delete(
+  '/projects/:id',
+  ah(async (req, res) => {
+    const { version } = await mutate((db) => {
+      const idx = db.projects.findIndex((p) => p.id === req.params.id);
+      if (idx === -1) throw notFound('Projeto');
+      const [project] = db.projects.splice(idx, 1);
+      // Tasks are kept, just without a project.
+      for (const task of db.tasks) {
+        if (task.projectId === project.id) {
+          task.projectId = null;
+          task.updatedAt = now();
+        }
+      }
+    });
+    send(res, { ok: true }, version);
   }),
 );
 

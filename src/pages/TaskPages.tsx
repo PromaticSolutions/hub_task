@@ -5,6 +5,7 @@ import {
   Building2,
   ClipboardList,
   Database,
+  FolderKanban,
   Inbox,
   Mail,
   Pencil,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { Task } from '../../shared/types';
 import { errorMessage } from '../lib/api';
+import { PROJECT_STATUS_META } from '../lib/constants';
 import { isOverdue, todayKey } from '../lib/dates';
 import { useData } from '../store/data';
 import { toast, usePrefs, useUi } from '../store/ui';
@@ -25,6 +27,7 @@ import { usePageHeader } from '../hooks/usePageHeader';
 import { useTaskModal } from '../hooks/useTaskModal';
 import { TasksWorkspace } from '../components/tasks/TasksWorkspace';
 import { EmptyState } from '../components/ui/EmptyState';
+import { ClientChip, ProjectChip } from '../components/ui/Badges';
 import { IdentityPicker } from '../components/IdentityPicker';
 
 function NewTaskButton({ label = 'Nova tarefa' }: { label?: string }) {
@@ -39,6 +42,7 @@ function NewTaskButton({ label = 'Nova tarefa' }: { label?: string }) {
 function Welcome() {
   const members = useData((s) => s.members);
   const clients = useData((s) => s.clients);
+  const projects = useData((s) => s.projects);
   const tasks = useData((s) => s.tasks);
   const loadSampleData = useData((s) => s.loadSampleData);
   const openMemberForm = useUi((s) => s.openMemberForm);
@@ -46,7 +50,7 @@ function Welcome() {
   const me = useCurrentUser();
   const { openNewTask } = useTaskModal();
   const [loading, setLoading] = useState(false);
-  const systemEmpty = !members.length && !clients.length && !tasks.length;
+  const systemEmpty = !members.length && !clients.length && !projects.length && !tasks.length;
 
   const steps = [
     { done: members.length > 0, title: 'Cadastre a equipe', text: 'Membros podem ser responsáveis, participantes e mencionados.', action: () => openMemberForm(), label: 'Novo membro', icon: <UserPlus size={15} /> },
@@ -111,6 +115,29 @@ function Welcome() {
 }
 
 const active = (t: Task) => !t.archived;
+
+function useBoardStats(tasks: Task[]) {
+  return useMemo(() => {
+    const today = todayKey();
+    return {
+      open: tasks.filter((t) => t.status !== 'done').length,
+      late: tasks.filter((t) => isOverdue(t, today)).length,
+      done: tasks.filter((t) => t.status === 'done').length,
+      blocked: tasks.filter((t) => t.status === 'blocked').length,
+    };
+  }, [tasks]);
+}
+
+function BoardStats({ stats }: { stats: ReturnType<typeof useBoardStats> }) {
+  return (
+    <div className="client-strip-stats">
+      <span><strong>{stats.open}</strong> em aberto</span>
+      <span className={stats.late ? 'late' : ''}><strong>{stats.late}</strong> atrasada{stats.late === 1 ? '' : 's'}</span>
+      <span><strong>{stats.blocked}</strong> bloqueada{stats.blocked === 1 ? '' : 's'}</span>
+      <span><strong>{stats.done}</strong> finalizada{stats.done === 1 ? '' : 's'}</span>
+    </div>
+  );
+}
 
 export function AllTasksPage() {
   usePageHeader('Todas as Tarefas', { subtitle: 'Quadro geral da equipe' });
@@ -197,20 +224,17 @@ export function ClientTasksPage() {
   const { clientId } = useParams();
   const client = useData((s) => s.clients.find((c) => c.id === clientId));
   const tasks = useData((s) => s.tasks);
+  const allProjects = useData((s) => s.projects);
   const openClientForm = useUi((s) => s.openClientForm);
   const openOnboardingForm = useUi((s) => s.openOnboardingForm);
   usePageHeader(client?.name ?? 'Cliente', { subtitle: client ? 'Tarefas do cliente' : undefined, color: client?.color });
 
   const scoped = useMemo(() => tasks.filter((t) => active(t) && t.scope === 'team' && t.clientId === clientId), [tasks, clientId]);
-  const stats = useMemo(() => {
-    const today = todayKey();
-    return {
-      open: scoped.filter((t) => t.status !== 'done').length,
-      late: scoped.filter((t) => isOverdue(t, today)).length,
-      done: scoped.filter((t) => t.status === 'done').length,
-      blocked: scoped.filter((t) => t.status === 'blocked').length,
-    };
-  }, [scoped]);
+  const stats = useBoardStats(scoped);
+  const projects = useMemo(
+    () => allProjects.filter((p) => p.clientId === clientId && p.status !== 'done').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    [allProjects, clientId],
+  );
 
   if (!client) {
     return (
@@ -246,12 +270,7 @@ export function ClientTasksPage() {
           </span>
         )}
       </div>
-      <div className="client-strip-stats">
-        <span><strong>{stats.open}</strong> em aberto</span>
-        <span className={stats.late ? 'late' : ''}><strong>{stats.late}</strong> atrasada{stats.late === 1 ? '' : 's'}</span>
-        <span><strong>{stats.blocked}</strong> bloqueada{stats.blocked === 1 ? '' : 's'}</span>
-        <span><strong>{stats.done}</strong> finalizada{stats.done === 1 ? '' : 's'}</span>
-      </div>
+      <BoardStats stats={stats} />
       <div className="client-strip-actions">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => openOnboardingForm(client.id)}>
           <Rocket size={14} /> Onboarding
@@ -260,6 +279,16 @@ export function ClientTasksPage() {
           <Pencil size={14} /> Editar
         </button>
       </div>
+      {projects.length > 0 && (
+        <div className="strip-projects" aria-label="Projetos do cliente">
+          <span className="muted">Projetos:</span>
+          {projects.map((p) => (
+            <Link key={p.id} to={`/projects/${p.id}`} className="strip-project-link">
+              <ProjectChip project={p} />
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -283,6 +312,76 @@ export function ClientTasksPage() {
               </button>
             </>
           }
+        />
+      }
+    />
+  );
+}
+
+export function ProjectTasksPage() {
+  const { projectId } = useParams();
+  const project = useData((s) => s.projects.find((p) => p.id === projectId));
+  const client = useData((s) => (project?.clientId ? s.clients.find((c) => c.id === project.clientId) : undefined));
+  const tasks = useData((s) => s.tasks);
+  const openProjectForm = useUi((s) => s.openProjectForm);
+  usePageHeader(project?.name ?? 'Projeto', {
+    subtitle: project ? (client ? `Projeto de ${client.name}` : 'Projeto') : undefined,
+    color: project?.color,
+  });
+
+  const scoped = useMemo(() => tasks.filter((t) => active(t) && t.scope === 'team' && t.projectId === projectId), [tasks, projectId]);
+  const stats = useBoardStats(scoped);
+
+  if (!project) {
+    return (
+      <EmptyState
+        icon={<FolderKanban size={26} />}
+        title="Projeto não encontrado"
+        description="Ele pode ter sido removido."
+        actions={
+          <Link to="/projects" className="btn btn-secondary">
+            Ver projetos
+          </Link>
+        }
+      />
+    );
+  }
+
+  const header = (
+    <div className="client-strip" style={{ ['--chip-color' as string]: project.color }}>
+      <div className="client-strip-info">
+        {client ? (
+          <Link to={`/clients/${client.id}`} className="strip-client-link" title="Ver todas as tarefas do cliente">
+            <ClientChip client={client} />
+          </Link>
+        ) : (
+          <span className="muted">Sem cliente</span>
+        )}
+        {project.status !== 'active' && <span className={`badge project-status ${project.status}`}>{PROJECT_STATUS_META[project.status].label}</span>}
+      </div>
+      <BoardStats stats={stats} />
+      <div className="client-strip-actions">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => openProjectForm(project)}>
+          <Pencil size={14} /> Editar
+        </button>
+      </div>
+      {project.description && <p className="strip-desc">{project.description}</p>}
+    </div>
+  );
+
+  return (
+    <TasksWorkspace
+      pageKey="project"
+      tasks={scoped}
+      defaults={{ projectId: project.id, ...(client ? { clientId: client.id } : {}) }}
+      hideProjectFilter
+      header={header}
+      emptyState={
+        <EmptyState
+          icon={<ClipboardList size={26} />}
+          title={`Nenhuma tarefa em ${project.name}`}
+          description="Crie a primeira tarefa aqui, ou selecione tarefas existentes em outro quadro (Ctrl+clique) e use “Projeto” na barra de ações para trazê-las."
+          actions={<NewTaskButton />}
         />
       }
     />

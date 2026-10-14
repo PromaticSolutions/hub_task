@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Archive, ArchiveRestore, ArrowRightLeft, Trash2, UserRound, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRightLeft, Folder, Trash2, UserRound, X } from 'lucide-react';
 import { STATUSES, type BulkAction } from '../../../shared/types';
 import { STATUS_META } from '../../lib/constants';
 import { errorMessage } from '../../lib/api';
 import { useData } from '../../store/data';
 import { confirmAction, toast } from '../../store/ui';
 import { Avatar } from '../ui/Avatar';
+import { ProjectIcon } from '../ui/Badges';
 import { MenuItem, Popover } from '../ui/Popover';
 
 interface BulkBarProps {
@@ -17,6 +18,7 @@ interface BulkBarProps {
 export function BulkBar({ ids, onClear, archivedMode }: BulkBarProps) {
   const bulk = useData((s) => s.bulk);
   const members = useData((s) => s.members);
+  const projects = useData((s) => s.projects);
   const [busy, setBusy] = useState(false);
   const count = ids.length;
 
@@ -113,6 +115,48 @@ export function BulkBar({ ids, onClear, archivedMode }: BulkBarProps) {
               </div>
             )}
           </Popover>
+          {projects.length > 0 && (
+            <Popover
+              width={260}
+              trigger={({ toggle, ref }) => (
+                <button type="button" ref={ref} className="btn btn-ghost btn-sm" onClick={toggle} disabled={busy}>
+                  <Folder size={15} /> <span className="hide-sm">Projeto</span>
+                </button>
+              )}
+            >
+              {(close) => (
+                <div className="menu">
+                  <div className="menu-title">Mover para o projeto</div>
+                  <div className="menu-scroll">
+                    <MenuItem
+                      icon={<span className="option-null"><X size={12} /></span>}
+                      onClick={() => {
+                        close();
+                        void run({ type: 'project', projectId: null }, 'Tarefas removidas do projeto.');
+                      }}
+                    >
+                      Sem projeto
+                    </MenuItem>
+                    {projects
+                      .filter((p) => p.status !== 'done')
+                      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+                      .map((p) => (
+                        <MenuItem
+                          key={p.id}
+                          icon={<ProjectIcon color={p.color} />}
+                          onClick={() => {
+                            close();
+                            void run({ type: 'project', projectId: p.id }, `${count} tarefa${count > 1 ? 's movidas' : ' movida'} para ${p.name}.`);
+                          }}
+                        >
+                          {p.name}
+                        </MenuItem>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </Popover>
+          )}
         </>
       )}
       <button

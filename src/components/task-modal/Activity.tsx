@@ -6,6 +6,7 @@ import {
   ArrowRight,
   CalendarClock,
   Copy,
+  Folder,
   History,
   MessageSquare,
   PlusCircle,
@@ -20,7 +21,7 @@ import { errorMessage } from '../../lib/api';
 import { formatDateTime, formatDay, timeAgo } from '../../lib/dates';
 import { useData } from '../../store/data';
 import { confirmAction, toast } from '../../store/ui';
-import { useCurrentUser, useMembersById } from '../../hooks/useLookups';
+import { useCurrentUser, useMembersById, useProjectsById } from '../../hooks/useLookups';
 import { Avatar } from '../ui/Avatar';
 import { MentionText, MentionTextarea } from '../ui/Mentions';
 
@@ -145,6 +146,7 @@ const HISTORY_ICON = {
   status: ArrowRight,
   assignee: UserRound,
   participants: Users,
+  project: Folder,
   dueDate: CalendarClock,
   archived: Archive,
   restored: ArchiveRestore,
@@ -152,7 +154,9 @@ const HISTORY_ICON = {
 
 function HistoryList({ task }: { task: Task }) {
   const membersById = useMembersById();
+  const projectsById = useProjectsById();
   const name = (id: string | null) => (id ? membersById.get(id)?.name ?? 'membro removido' : null);
+  const projectName = (id: string | null) => (id ? projectsById.get(id)?.name ?? 'projeto removido' : null);
 
   const describe = (h: HistoryEntry) => {
     switch (h.type) {
@@ -200,6 +204,14 @@ function HistoryList({ task }: { task: Task }) {
           </>
         );
       }
+      case 'project':
+        if (!h.from) return <>colocou no projeto <strong>{projectName(h.to)}</strong></>;
+        if (!h.to) return <>tirou do projeto <strong>{projectName(h.from)}</strong></>;
+        return (
+          <>
+            moveu do projeto <strong>{projectName(h.from)}</strong> para <strong>{projectName(h.to)}</strong>
+          </>
+        );
       case 'dueDate':
         if (!h.from) return <>definiu o prazo para <strong>{formatDay(h.to!, "d 'de' MMM yyyy")}</strong></>;
         if (!h.to) return <>removeu o prazo (era <strong>{formatDay(h.from, "d 'de' MMM yyyy")}</strong>)</>;

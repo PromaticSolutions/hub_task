@@ -1,4 +1,4 @@
-import type { Client, Member, Settings, Task } from '../shared/types.js';
+import type { Client, Member, Project, Settings, Task } from '../shared/types.js';
 import { createFileStore } from './store-file.js';
 import { createPgStore, databaseUrl } from './store-pg.js';
 
@@ -6,6 +6,7 @@ export interface DbShape {
   taskCounter: number;
   members: Member[];
   clients: Client[];
+  projects: Project[];
   tasks: Task[];
   settings: Settings;
 }

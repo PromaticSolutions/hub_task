@@ -1,5 +1,5 @@
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronsUp, Equal, ChevronUp, ChevronDown } from 'lucide-react';
-import type { Client, Priority, Status, Task } from '../../../shared/types';
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronsUp, Equal, ChevronUp, ChevronDown, Folder } from 'lucide-react';
+import type { Client, Priority, Project, Status, Task } from '../../../shared/types';
 import { PRIORITY_META, STATUS_META } from '../../lib/constants';
 import { daysUntil, formatDay, formatDueShort, isOverdue } from '../../lib/dates';
 
@@ -35,6 +35,21 @@ export function ClientChip({ client }: { client: Client | null | undefined }) {
     <span className="chip" style={{ ['--chip-color' as string]: client.color }} title={client.name}>
       <span className="chip-dot" />
       <span className="truncate">{client.name}</span>
+    </span>
+  );
+}
+
+/** Solid folder in the project's color — sets projects apart from the round client dots. */
+export function ProjectIcon({ color, size = 14 }: { color: string; size?: number }) {
+  return <Folder size={size} className="project-icon" style={{ color, fill: color }} aria-hidden />;
+}
+
+export function ProjectChip({ project }: { project: Project | null | undefined }) {
+  if (!project) return null;
+  return (
+    <span className="chip project-chip" style={{ ['--chip-color' as string]: project.color }} title={`Projeto: ${project.name}`}>
+      <ProjectIcon color={project.color} size={11} />
+      <span className="truncate">{project.name}</span>
     </span>
   );
 }

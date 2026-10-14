@@ -15,8 +15,12 @@ export function ensureMember(db: DbShape, id: string | null | undefined, label: 
   if (id && !db.members.some((m) => m.id === id)) throw new HttpError(400, `${label} não encontrado(a).`);
 }
 
-function ensureClient(db: DbShape, id: string | null | undefined) {
+export function ensureClient(db: DbShape, id: string | null | undefined) {
   if (id && !db.clients.some((c) => c.id === id)) throw new HttpError(400, 'Cliente não encontrado.');
+}
+
+export function ensureProject(db: DbShape, id: string | null | undefined) {
+  if (id && !db.projects.some((p) => p.id === id)) throw new HttpError(400, 'Projeto não encontrado.');
 }
 
 function ensureParticipants(db: DbShape, ids: string[] | undefined) {
@@ -48,6 +52,7 @@ export function rebalance(db: DbShape, status: Task['status']): boolean {
 
 export function createTask(db: DbShape, input: TaskInput, actor: string | null): Task {
   ensureClient(db, input.clientId);
+  ensureProject(db, input.projectId);
   ensureMember(db, input.assigneeId, 'Responsável');
   ensureParticipants(db, input.participantIds);
   const scope = input.scope ?? 'team';
@@ -68,6 +73,7 @@ export function createTask(db: DbShape, input: TaskInput, actor: string | null):
     description,
     descriptionMentions: extractMentions(description, db.members),
     clientId: input.clientId ?? null,
+    projectId: input.projectId ?? null,
     color: input.color ?? null,
     assigneeId,
     participantIds: cleanParticipants(db, input.participantIds ?? [], assigneeId),
@@ -93,10 +99,11 @@ export function createTask(db: DbShape, input: TaskInput, actor: string | null):
   return task;
 }
 
-/** Applies a patch, recording history for status, assignee, participants, due date and archiving. */
+/** Applies a patch, recording history for status, assignee, participants, project, due date and archiving. */
 export function applyPatch(db: DbShape, task: Task, patch: TaskPatch, actor: string | null) {
   // Validate everything first so a rejected request never leaves partial changes behind.
   if (patch.clientId !== undefined) ensureClient(db, patch.clientId);
+  if (patch.projectId !== undefined) ensureProject(db, patch.projectId);
   if (patch.assigneeId !== undefined) ensureMember(db, patch.assigneeId, 'Responsável');
   ensureParticipants(db, patch.participantIds);
   let personalOwner: string | null = null;
@@ -144,6 +151,11 @@ export function applyPatch(db: DbShape, task: Task, patch: TaskPatch, actor: str
   if (before !== after) {
     addHistory(task, 'participants', actor, task.participantIds.join(','), nextParticipants.join(','));
     task.participantIds = nextParticipants;
+  }
+
+  if (patch.projectId !== undefined && patch.projectId !== task.projectId) {
+    addHistory(task, 'project', actor, task.projectId, patch.projectId);
+    task.projectId = patch.projectId;
   }
 
   if (patch.dueDate !== undefined && patch.dueDate !== task.dueDate) {

@@ -1,6 +1,6 @@
 # Hub Task Timely
 
-Sistema interno de gerenciamento de tarefas inspirado no Trello: quadro Kanban, lista e calendário, clientes com cores próprias, equipe, @menções, anexos, histórico de alterações e dashboard.
+Sistema interno de gerenciamento de tarefas inspirado no Trello: quadro Kanban, lista e calendário, projetos e clientes com cores próprias, equipe, @menções, anexos, histórico de alterações e dashboard.
 
 ## Como rodar
 
@@ -39,7 +39,7 @@ Na Vercel não existe disco permanente, então em produção os dados ficam no *
 
    Se você conectar o Supabase pela integração da Vercel, ela cria `POSTGRES_URL`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` sozinha, e o sistema aceita esses nomes.
 4. **Região das funções** (Vercel → *Settings → Functions*): escolha a mesma região do Supabase (São Paulo = `gru1`). Com regiões diferentes, cada gravação fica bem mais lenta.
-5. Faça o deploy (ou *Redeploy*, se as variáveis foram criadas depois do primeiro deploy). No primeiro acesso, o sistema cria sozinho as tabelas (`members`, `clients`, `tasks`, `app_settings`, `app_meta`, com RLS ativado) e o bucket privado `attachments`.
+5. Faça o deploy (ou *Redeploy*, se as variáveis foram criadas depois do primeiro deploy). No primeiro acesso, o sistema cria sozinho as tabelas (`members`, `clients`, `projects`, `tasks`, `app_settings`, `app_meta`, com RLS ativado) e o bucket privado `attachments`. Em bancos criados por versões anteriores, as tabelas e colunas novas são adicionadas automaticamente na inicialização, sem alterar os dados existentes.
 
 Para conferir: `https://SEU-SITE.vercel.app/api/health` deve responder `{"ok":true,"storage":"postgres"}`.
 
@@ -82,19 +82,20 @@ npm start       # serve a API e a interface em http://localhost:3001
 
 1. Cadastre os membros da equipe (**Novo membro**).
 2. Em **Configurações → Quem é você?**, escolha seu usuário. Como esta versão não tem login, essa escolha fica salva no navegador e é usada em Minhas Tarefas, Pessoais, comentários, menções e no histórico.
-3. Cadastre os clientes (**Novo cliente**) e crie as tarefas.
+3. Cadastre os clientes (**Novo cliente**) e, se quiser separar o trabalho, os projetos (**+** em Projetos, no menu). Depois crie as tarefas.
 
 ## Funcionalidades
 
-- **Menu lateral** com grupos recolhíveis: Tarefas (Todas, Minhas, Pessoais, Arquivadas), Visão geral (Dashboard, Onboarding), Clientes (lista com cor, tarefas em aberto e atrasadas, filtro quando há muitos) e Equipe.
+- **Menu lateral** com grupos recolhíveis: Tarefas (Todas, Minhas, Pessoais, Arquivadas), Visão geral (Dashboard, Onboarding), Projetos, Clientes (ambos com cor, tarefas em aberto e atrasadas, filtro quando há muitos) e Equipe.
+- **Projetos**: cada projeto tem nome, cor, cliente opcional, situação (Ativo, Pausado ou Concluído), descrição e um quadro próprio com Kanban, lista e calendário. Tarefas criadas no quadro já entram no projeto (e no cliente dele). Projetos concluídos saem do menu, mas continuam em **Gerenciar projetos → Concluídos**. Para levar tarefas existentes para um projeto, selecione-as (Ctrl+clique) e use **Projeto** na barra de ações em lote.
 - **Kanban** com cinco colunas (A Fazer, Em Andamento, Bloqueado, Homologação, Finalizado). Arrastar e soltar com mouse, toque (pressione e segure) e teclado (Espaço para pegar e soltar, setas para mover). Ao trocar de coluna, um aviso oferece **Desfazer**.
 - **Lista** com ordenação pelos cabeçalhos, troca de status na própria linha e seleção múltipla.
 - **Calendário** mensal: arraste uma tarefa para outro dia para mudar o prazo, ou da bandeja "Sem prazo" para um dia. No celular vira uma agenda.
-- **Tarefa completa** em janela: título, descrição com @menções, cliente, cor, responsável, participantes, prioridade, prazo, visibilidade (equipe/pessoal), etapa de onboarding, anexos, comentários e histórico. As edições só são enviadas ao salvar (Ctrl+S), e apenas os campos alterados, para não sobrescrever mudanças feitas por colegas em outros campos.
-- **Histórico** automático de status, responsável, participantes, prazo, arquivamento e duplicação.
-- **Filtros** por cliente, responsável, status, prioridade, período de entrega e atrasadas; busca por título ou descrição (ignora acentos); ordenação por prazo, prioridade e data de criação. Os filtros ficam na URL, então dá para compartilhar o link de uma visão filtrada.
-- **Ações em lote**: Ctrl+clique nos cards (ou as caixas de seleção da lista) para mover, atribuir, arquivar ou excluir várias tarefas.
-- **Dashboard** com indicadores, tarefas por status, concluídas por semana, distribuição por cliente e por responsável, atrasadas e próximas entregas. Cada barra e indicador abre a lista de tarefas já filtrada; cada gráfico tem uma visualização em tabela.
+- **Tarefa completa** em janela: título, descrição com @menções, projeto, cliente, cor, responsável, participantes, prioridade, prazo, visibilidade (equipe/pessoal), etapa de onboarding, anexos, comentários e histórico. As edições só são enviadas ao salvar (Ctrl+S), e apenas os campos alterados, para não sobrescrever mudanças feitas por colegas em outros campos.
+- **Histórico** automático de status, responsável, participantes, projeto, prazo, arquivamento e duplicação.
+- **Filtros** por cliente, projeto, responsável, status, prioridade, período de entrega e atrasadas; busca por título ou descrição (ignora acentos); ordenação por prazo, prioridade e data de criação. Os filtros ficam na URL, então dá para compartilhar o link de uma visão filtrada.
+- **Ações em lote**: Ctrl+clique nos cards (ou as caixas de seleção da lista) para mover, atribuir, colocar em um projeto, arquivar ou excluir várias tarefas.
+- **Dashboard** com indicadores, tarefas por status, concluídas por semana, distribuição por cliente, por projeto e por responsável, atrasadas e próximas entregas. Cada barra e indicador abre a lista de tarefas já filtrada; cada gráfico tem uma visualização em tabela.
 - **Onboarding de clientes**: gera as tarefas a partir de um modelo de etapas editável em Configurações, com prazos contados a partir da data de início, e mostra o progresso por cliente.
 - **Menções**: o sino no topo lista os comentários em que você foi mencionado.
 - **Temas claro e escuro** (ou seguindo o sistema). As cores de status foram validadas para daltonismo e contraste nos dois temas.
@@ -104,8 +105,9 @@ Atalhos: `N` nova tarefa · `/` buscar · `V` alternar visualização · `Ctrl+S
 
 ### Regras de consistência
 
-- Excluir uma tarefa, um anexo, um comentário, um cliente ou um membro sempre pede confirmação.
-- Ao remover um **cliente**, suas tarefas continuam existindo, sem cliente e mantendo a cor.
+- Excluir uma tarefa, um anexo, um comentário, um projeto, um cliente ou um membro sempre pede confirmação.
+- Ao remover um **projeto**, suas tarefas continuam existindo, sem projeto.
+- Ao remover um **cliente**, suas tarefas continuam existindo, sem cliente e mantendo a cor; os projetos dele ficam sem cliente.
 - Ao remover um **membro**, as tarefas dele ficam sem responsável e ele sai dos participantes; as tarefas pessoais dele passam para o quadro da equipe.
 - O responsável nunca aparece também como participante.
 

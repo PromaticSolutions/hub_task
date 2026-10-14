@@ -4,6 +4,7 @@ import {
   Archive,
   ChevronDown,
   ClipboardList,
+  FolderKanban,
   Inbox,
   LayoutDashboard,
   ListTodo,
@@ -21,6 +22,7 @@ import { usePrefs, useUi } from '../../store/ui';
 import { useCurrentUser } from '../../hooks/useLookups';
 import { isOverdue, todayKey } from '../../lib/dates';
 import { Avatar } from '../ui/Avatar';
+import { ProjectIcon } from '../ui/Badges';
 
 function Group({ id, label, children, action }: { id: string; label: string; children: ReactNode; action?: ReactNode }) {
   const collapsed = usePrefs((s) => !!s.collapsed[id]);
@@ -71,28 +73,72 @@ function NavItem({
   );
 }
 
+interface EntityLink {
+  id: string;
+  name: string;
+  to: string;
+  icon: ReactNode;
+  count: number;
+  late?: number;
+}
+
+/** Links to client or project boards, with a filter box once the list gets long. */
+function EntityNavList({ items, noun, emptyLabel, onCreate }: { items: EntityLink[]; noun: string; emptyLabel: string; onCreate: () => void }) {
+  const [query, setQuery] = useState('');
+  const shown = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase('pt-BR');
+    return items.filter((i) => !q || i.name.toLocaleLowerCase('pt-BR').includes(q)).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [items, query]);
+  return (
+    <>
+      {items.length > 6 && (
+        <div className="nav-search">
+          <Search size={13} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Filtrar ${noun}s`} aria-label={`Filtrar ${noun}s`} />
+        </div>
+      )}
+      <div className="nav-entities">
+        {shown.map((i) => (
+          <NavItem key={i.id} to={i.to} icon={i.icon} label={i.name} count={i.count} alert={i.late} />
+        ))}
+        {!items.length && (
+          <button type="button" className="nav-empty" onClick={onCreate}>
+            <Plus size={14} /> {emptyLabel}
+          </button>
+        )}
+        {items.length > 0 && !shown.length && <p className="nav-empty-text">Nenhum {noun} encontrado</p>}
+      </div>
+    </>
+  );
+}
+
 export function Sidebar() {
   const tasks = useData((s) => s.tasks);
   const clients = useData((s) => s.clients);
+  const projects = useData((s) => s.projects);
   const members = useData((s) => s.members);
   const me = useCurrentUser();
   const open = useUi((s) => s.sidebarOpen);
   const setOpen = useUi((s) => s.setSidebarOpen);
   const openClientForm = useUi((s) => s.openClientForm);
   const openMemberForm = useUi((s) => s.openMemberForm);
-  const [clientQuery, setClientQuery] = useState('');
+  const openProjectForm = useUi((s) => s.openProjectForm);
 
   const counts = useMemo(() => {
     const today = todayKey();
     const active = tasks.filter((t) => !t.archived);
     const team = active.filter((t) => t.scope === 'team');
     const perClient = new Map<string, { open: number; late: number }>();
-    for (const t of team) {
-      if (!t.clientId) continue;
-      const c = perClient.get(t.clientId) ?? { open: 0, late: 0 };
+    const perProject = new Map<string, { open: number; late: number }>();
+    const tally = (map: typeof perClient, key: string, t: (typeof tasks)[number]) => {
+      const c = map.get(key) ?? { open: 0, late: 0 };
       if (t.status !== 'done') c.open += 1;
       if (isOverdue(t, today)) c.late += 1;
-      perClient.set(t.clientId, c);
+      map.set(key, c);
+    };
+    for (const t of team) {
+      if (t.clientId) tally(perClient, t.clientId, t);
+      if (t.projectId) tally(perProject, t.projectId, t);
     }
     const mine = me ? team.filter((t) => t.assigneeId === me.id || t.participantIds.includes(me.id)) : [];
     const personal = me ? active.filter((t) => t.scope === 'personal' && t.ownerId === me.id) : [];
@@ -106,15 +152,38 @@ export function Sidebar() {
       archived: tasks.filter((t) => t.archived).length,
       onboarding: openOnly(active.filter((t) => t.onboarding)),
       perClient,
+      perProject,
     };
   }, [tasks, me]);
 
-  const sortedClients = useMemo(() => {
-    const q = clientQuery.trim().toLocaleLowerCase('pt-BR');
-    return [...clients]
-      .filter((c) => !q || c.name.toLocaleLowerCase('pt-BR').includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [clients, clientQuery]);
+  const clientLinks = useMemo<EntityLink[]>(
+    () =>
+      clients.map((c) => ({
+        id: c.id,
+        name: c.name,
+        to: `/clients/${c.id}`,
+        icon: <span className="client-dot" style={{ background: c.color }} />,
+        count: counts.perClient.get(c.id)?.open ?? 0,
+        late: counts.perClient.get(c.id)?.late,
+      })),
+    [clients, counts],
+  );
+
+  // Finished projects leave the menu; they stay listed on the Projects page.
+  const projectLinks = useMemo<EntityLink[]>(
+    () =>
+      projects
+        .filter((p) => p.status !== 'done')
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          to: `/projects/${p.id}`,
+          icon: <ProjectIcon color={p.color} size={15} />,
+          count: counts.perProject.get(p.id)?.open ?? 0,
+          late: counts.perProject.get(p.id)?.late,
+        })),
+    [projects, counts],
+  );
 
   return (
     <>
@@ -149,6 +218,24 @@ export function Sidebar() {
           </Group>
 
           <Group
+            id="projects"
+            label="Projetos"
+            action={
+              <button type="button" className="nav-group-action" onClick={() => openProjectForm()} aria-label="Novo projeto" title="Novo projeto">
+                <Plus size={15} />
+              </button>
+            }
+          >
+            <EntityNavList
+              items={projectLinks}
+              noun="projeto"
+              emptyLabel={projects.length ? 'Novo projeto' : 'Criar primeiro projeto'}
+              onCreate={() => openProjectForm()}
+            />
+            <NavItem to="/projects" end icon={<FolderKanban size={17} />} label="Gerenciar projetos" />
+          </Group>
+
+          <Group
             id="clients"
             label="Clientes"
             action={
@@ -157,33 +244,7 @@ export function Sidebar() {
               </button>
             }
           >
-            {clients.length > 6 && (
-              <div className="nav-search">
-                <Search size={13} />
-                <input value={clientQuery} onChange={(e) => setClientQuery(e.target.value)} placeholder="Filtrar clientes" aria-label="Filtrar clientes" />
-              </div>
-            )}
-            <div className="nav-clients">
-              {sortedClients.map((c) => {
-                const info = counts.perClient.get(c.id);
-                return (
-                  <NavItem
-                    key={c.id}
-                    to={`/clients/${c.id}`}
-                    icon={<span className="client-dot" style={{ background: c.color }} />}
-                    label={c.name}
-                    count={info?.open ?? 0}
-                    alert={info?.late}
-                  />
-                );
-              })}
-              {!clients.length && (
-                <button type="button" className="nav-empty" onClick={() => openClientForm()}>
-                  <Plus size={14} /> Cadastrar primeiro cliente
-                </button>
-              )}
-              {clients.length > 0 && !sortedClients.length && <p className="nav-empty-text">Nenhum cliente encontrado</p>}
-            </div>
+            <EntityNavList items={clientLinks} noun="cliente" emptyLabel="Cadastrar primeiro cliente" onCreate={() => openClientForm()} />
             <NavItem to="/clients" end icon={<Building2 size={17} />} label="Gerenciar clientes" />
           </Group>
 

@@ -10,12 +10,13 @@ import { useTaskModal } from './hooks/useTaskModal';
 import { Sidebar } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
 import { TaskModalHost } from './components/task-modal/TaskModal';
-import { ClientFormModal, MemberFormModal, OnboardingFormModal } from './components/forms/EntityForms';
+import { ClientFormModal, MemberFormModal, OnboardingFormModal, ProjectFormModal } from './components/forms/EntityForms';
 import { ConfirmDialog, Toasts } from './components/ui/Overlays';
 import { EmptyState } from './components/ui/EmptyState';
-import { AllTasksPage, ArchivedPage, ClientTasksPage, MyTasksPage, PersonalPage } from './pages/TaskPages';
+import { AllTasksPage, ArchivedPage, ClientTasksPage, MyTasksPage, PersonalPage, ProjectTasksPage } from './pages/TaskPages';
 import { DashboardPage } from './pages/DashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
+import { ProjectsPage } from './pages/ProjectsPage';
 import { ClientsPage, TeamPage } from './pages/PeoplePages';
 import { SettingsPage } from './pages/SettingsPage';
 
@@ -172,6 +173,7 @@ function Layout() {
       <TaskModalHost />
       <ClientFormModal />
       <MemberFormModal />
+      <ProjectFormModal />
       <OnboardingFormModal />
       <ConfirmDialog />
       <Toasts />
@@ -204,6 +206,8 @@ export function App() {
           <Route path="archived" element={<ArchivedPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="onboarding" element={<OnboardingPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
+          <Route path="projects/:projectId" element={<ProjectTasksPage />} />
           <Route path="clients" element={<ClientsPage />} />
           <Route path="clients/:clientId" element={<ClientTasksPage />} />
           <Route path="team" element={<TeamPage />} />

@@ -6,12 +6,13 @@ import { STATUSES, type Status, type Task } from '../../shared/types';
 import { STATUS_META } from '../lib/constants';
 import { daysUntil, formatDueShort, isOverdue, ptBR, todayKey, addDaysKey } from '../lib/dates';
 import { useData } from '../store/data';
-import { useClientsById, useMembersById } from '../hooks/useLookups';
+import { useClientsById, useMembersById, useProjectsById } from '../hooks/useLookups';
 import { usePageHeader } from '../hooks/usePageHeader';
 import { useTaskModal } from '../hooks/useTaskModal';
 import { Avatar } from '../components/ui/Avatar';
 import { EmptyState } from '../components/ui/EmptyState';
-import { SelectPicker, clientOptions, memberOptions } from '../components/ui/Pickers';
+import { SelectPicker, clientOptions, memberOptions, projectOptions } from '../components/ui/Pickers';
+import { ProjectIcon } from '../components/ui/Badges';
 
 /* ---------- Tooltip (shared by every chart card) ---------- */
 
@@ -221,26 +222,35 @@ export function DashboardPage() {
   usePageHeader('Dashboard', { subtitle: 'Visão geral do trabalho da equipe' });
   const tasks = useData((s) => s.tasks);
   const clients = useData((s) => s.clients);
+  const projects = useData((s) => s.projects);
   const members = useData((s) => s.members);
   const clientsById = useClientsById();
+  const projectsById = useProjectsById();
   const membersById = useMembersById();
   const { openTask } = useTaskModal();
   const navigate = useNavigate();
   const [clientId, setClientId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
 
   const scoped = useMemo(
     () =>
       tasks.filter(
-        (t) => !t.archived && t.scope === 'team' && (!clientId || t.clientId === clientId) && (!assigneeId || t.assigneeId === assigneeId),
+        (t) =>
+          !t.archived &&
+          t.scope === 'team' &&
+          (!clientId || t.clientId === clientId) &&
+          (!projectId || t.projectId === projectId) &&
+          (!assigneeId || t.assigneeId === assigneeId),
       ),
-    [tasks, clientId, assigneeId],
+    [tasks, clientId, projectId, assigneeId],
   );
 
   /** Builds a link to "Todas as Tarefas" carrying the dashboard filters plus extra params. */
   const link = (extra: Record<string, string>) => {
     const p = new URLSearchParams();
     if (clientId) p.set('client', clientId);
+    if (projectId) p.set('project', projectId);
     if (assigneeId) p.set('assignee', assigneeId);
     for (const [k, v] of Object.entries(extra)) p.set(k, v);
     const qs = p.toString();
@@ -251,6 +261,7 @@ export function DashboardPage() {
     const today = todayKey();
     const byStatus = emptyCounts();
     const byClient = new Map<string, Counts>();
+    const byProject = new Map<string, Counts>();
     const byMember = new Map<string, Counts>();
     const overdue: Task[] = [];
     const upcoming: Task[] = [];
@@ -263,6 +274,10 @@ export function DashboardPage() {
       const c = byClient.get(ck) ?? emptyCounts();
       c[t.status] += 1;
       byClient.set(ck, c);
+      const pk = t.projectId ?? 'none';
+      const pc = byProject.get(pk) ?? emptyCounts();
+      pc[t.status] += 1;
+      byProject.set(pk, pc);
       const mk = t.assigneeId ?? 'none';
       const m = byMember.get(mk) ?? emptyCounts();
       m[t.status] += 1;
@@ -286,7 +301,7 @@ export function DashboardPage() {
       const w = weeks.find((wk) => at >= wk.start && at < wk.end);
       if (w) w.count += 1;
     }
-    return { byStatus, byClient, byMember, overdue, upcoming, done30, weeks };
+    return { byStatus, byClient, byProject, byMember, overdue, upcoming, done30, weeks };
   }, [scoped]);
 
   if (!tasks.some((t) => !t.archived && t.scope === 'team')) {
@@ -324,6 +339,21 @@ export function DashboardPage() {
     })
     .sort((a, b) => total(b.counts) - total(a.counts));
 
+  const projectRows: StackRow[] = [...data.byProject.entries()]
+    .map(([key, counts]) => {
+      const project = projectsById.get(key);
+      const projectParam = project ? project.id : 'none';
+      return {
+        key,
+        label: project?.name ?? 'Sem projeto',
+        marker: project ? <ProjectIcon color={project.color} /> : <span className="client-dot" style={{ background: 'var(--border-strong)' }} />,
+        counts,
+        href: project ? `/projects/${project.id}` : link({ project: 'none' }),
+        segmentHref: (status: Status) => link({ project: projectParam, status }),
+      };
+    })
+    .sort((a, b) => total(b.counts) - total(a.counts));
+
   const memberRows: StackRow[] = [...data.byMember.entries()]
     .map(([key, counts]) => {
       const member = membersById.get(key);
@@ -350,12 +380,18 @@ export function DashboardPage() {
           <span className="field-label">Cliente</span>
           <SelectPicker value={clientId} onChange={setClientId} options={clientOptions(clients)} placeholder="Todos os clientes" nullable nullLabel="Todos os clientes" ariaLabel="Filtrar dashboard por cliente" />
         </div>
+        {projects.length > 0 && (
+          <div className="dash-filter">
+            <span className="field-label">Projeto</span>
+            <SelectPicker value={projectId} onChange={setProjectId} options={projectOptions(projects)} placeholder="Todos os projetos" nullable nullLabel="Todos os projetos" ariaLabel="Filtrar dashboard por projeto" />
+          </div>
+        )}
         <div className="dash-filter">
           <span className="field-label">Responsável</span>
           <SelectPicker value={assigneeId} onChange={setAssigneeId} options={memberOptions(members)} placeholder="Toda a equipe" nullable nullLabel="Toda a equipe" ariaLabel="Filtrar dashboard por responsável" />
         </div>
-        {(clientId || assigneeId) && (
-          <button type="button" className="btn btn-ghost" onClick={() => { setClientId(null); setAssigneeId(null); }}>
+        {(clientId || projectId || assigneeId) && (
+          <button type="button" className="btn btn-ghost" onClick={() => { setClientId(null); setProjectId(null); setAssigneeId(null); }}>
             <FilterX size={16} /> Limpar filtros
           </button>
         )}
@@ -469,6 +505,18 @@ export function DashboardPage() {
         >
           {(handlers) => <StackedRows rows={clientRows} handlers={handlers} />}
         </ChartCard>
+
+        {projects.length > 0 && (
+          <ChartCard
+            title="Distribuição por projeto"
+            subtitle="Tarefas ativas por status"
+            className="span-2"
+            legend={<Legend />}
+            table={<CountsTable rows={projectRows} firstCol="Projeto" />}
+          >
+            {(handlers) => <StackedRows rows={projectRows} handlers={handlers} />}
+          </ChartCard>
+        )}
 
         <ChartCard
           title="Distribuição por responsável"

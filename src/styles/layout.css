@@ -280,7 +280,7 @@
   color: var(--sidebar-muted);
 }
 
-.nav-clients {
+.nav-entities {
   display: flex;
   flex-direction: column;
   gap: 1px;

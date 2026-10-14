@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Rocket } from 'lucide-react';
-import type { ClientInput, MemberInput } from '../../../shared/types';
-import { PALETTE, PRIORITY_META } from '../../lib/constants';
+import { Check, Folder, Rocket } from 'lucide-react';
+import { PROJECT_STATUSES, type ClientInput, type MemberInput, type ProjectInput } from '../../../shared/types';
+import { PALETTE, PRIORITY_META, PROJECT_STATUS_META } from '../../lib/constants';
 import { errorMessage } from '../../lib/api';
 import { addDaysKey, formatDay, todayKey } from '../../lib/dates';
 import { readableOn, initials } from '../../lib/color';
@@ -132,6 +132,127 @@ export function ClientFormModal() {
           <span className="field-label">Observações</span>
           <textarea className="textarea" value={values.notes} onChange={(e) => set('notes', e.target.value)} rows={3} maxLength={2000} placeholder="Informações úteis sobre o cliente" />
         </label>
+      </form>
+    </Modal>
+  );
+}
+
+export function ProjectFormModal() {
+  const form = useUi((s) => s.projectForm);
+  const close = useUi((s) => s.closeForms);
+  const projects = useData((s) => s.projects);
+  const clients = useData((s) => s.clients);
+  const saveProject = useData((s) => s.saveProject);
+  const navigate = useNavigate();
+  const editing = form?.project ?? null;
+  const [values, setValues] = useState<ProjectInput>({ name: '', color: PALETTE[0], description: '', clientId: null, status: 'active' });
+  const [errors, setErrors] = useState<Partial<Record<keyof ProjectInput, string>>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!form) return;
+    setErrors({});
+    setValues(
+      form.project
+        ? {
+            name: form.project.name,
+            color: form.project.color,
+            description: form.project.description,
+            clientId: form.project.clientId,
+            status: form.project.status,
+          }
+        : { name: '', color: pickColor(projects.map((p) => p.color)), description: '', clientId: form.clientId, status: 'active' },
+    );
+  }, [form]);
+
+  const clientOpts = useMemo(() => clientOptions(clients), [clients]);
+  const client = clients.find((c) => c.id === values.clientId);
+
+  const set = <K extends keyof ProjectInput>(k: K, v: ProjectInput[K]) => {
+    setValues((s) => ({ ...s, [k]: v }));
+    setErrors((e) => ({ ...e, [k]: undefined }));
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const errs: typeof errors = {};
+    if (!values.name.trim()) errs.name = 'Informe o nome do projeto.';
+    else if (projects.some((p) => p.id !== editing?.id && p.name.trim().toLowerCase() === values.name.trim().toLowerCase()))
+      errs.name = 'Já existe um projeto com esse nome.';
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
+    setSaving(true);
+    try {
+      const saved = await saveProject({ ...values, name: values.name.trim(), description: values.description.trim() }, editing?.id);
+      toast.success(
+        editing ? 'Projeto atualizado.' : `Projeto "${saved.name}" criado.`,
+        editing ? undefined : { label: 'Abrir quadro', run: () => navigate(`/projects/${saved.id}`) },
+      );
+      close();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={!!form}
+      onClose={close}
+      title={editing ? 'Editar projeto' : 'Novo projeto'}
+      subtitle={editing ? editing.name : 'Agrupe tarefas em um quadro próprio, com ou sem cliente.'}
+      size="md"
+      footer={
+        <div className="form-footer">
+          <button type="button" className="btn btn-secondary" onClick={close}>
+            Cancelar
+          </button>
+          <button type="submit" form="project-form" className="btn btn-primary" disabled={saving}>
+            {saving ? <span className="spinner" /> : <Check size={16} />}
+            {editing ? 'Salvar projeto' : 'Criar projeto'}
+          </button>
+        </div>
+      }
+    >
+      <form id="project-form" className="form-grid" onSubmit={submit} noValidate>
+        <div className="form-preview" style={{ ['--chip-color' as string]: values.color }}>
+          <span className="form-preview-swatch" style={{ background: values.color, color: readableOn(values.color) }}>
+            <Folder size={20} />
+          </span>
+          <div>
+            <strong>{values.name || 'Nome do projeto'}</strong>
+            <span className="muted">{client ? client.name : 'Sem cliente'}</span>
+          </div>
+        </div>
+        <label className="field span-2">
+          <span className="field-label">Nome *</span>
+          <input className="input" value={values.name} onChange={(e) => set('name', e.target.value)} aria-invalid={!!errors.name} maxLength={100} data-autofocus placeholder="Ex.: Site institucional" />
+          {errors.name && <span className="field-error">{errors.name}</span>}
+        </label>
+        <div className="field span-2">
+          <span className="field-label">Cor de identificação</span>
+          <ColorPicker value={values.color} onChange={(c) => set('color', c ?? PALETTE[0])} />
+        </div>
+        <div className="field">
+          <span className="field-label">Cliente</span>
+          <SelectPicker value={values.clientId} onChange={(v) => set('clientId', v)} options={clientOpts} placeholder="Sem cliente" nullable nullLabel="Sem cliente" ariaLabel="Cliente do projeto" />
+        </div>
+        <div className="field">
+          <span className="field-label">Situação</span>
+          <div className="segmented full" role="radiogroup" aria-label="Situação do projeto">
+            {PROJECT_STATUSES.map((st) => (
+              <button key={st} type="button" role="radio" aria-checked={values.status === st} className={values.status === st ? 'active' : ''} onClick={() => set('status', st)}>
+                {PROJECT_STATUS_META[st].label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="field span-2">
+          <span className="field-label">Descrição</span>
+          <textarea className="textarea" value={values.description} onChange={(e) => set('description', e.target.value)} rows={3} maxLength={2000} placeholder="Objetivo, escopo, links importantes..." />
+        </label>
+        {values.status === 'done' && <p className="field-hint span-2">Projetos concluídos saem do menu lateral, mas continuam em Projetos → Concluídos.</p>}
       </form>
     </Modal>
   );

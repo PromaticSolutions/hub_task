@@ -20,13 +20,24 @@ interface WorkspaceProps {
   defaults?: Partial<TaskInput>;
   emptyState: ReactNode;
   hideClientFilter?: boolean;
+  hideProjectFilter?: boolean;
   archivedMode?: boolean;
   views?: ViewMode[];
   header?: ReactNode;
 }
 
-/** Toolbar + Kanban/List/Calendar for a set of tasks (all, mine, a client, onboarding...). */
-export function TasksWorkspace({ pageKey, tasks, defaults = {}, emptyState, hideClientFilter, archivedMode, views = VIEW_ORDER, header }: WorkspaceProps) {
+/** Toolbar + Kanban/List/Calendar for a set of tasks (all, mine, a client, a project, onboarding...). */
+export function TasksWorkspace({
+  pageKey,
+  tasks,
+  defaults = {},
+  emptyState,
+  hideClientFilter,
+  hideProjectFilter,
+  archivedMode,
+  views = VIEW_ORDER,
+  header,
+}: WorkspaceProps) {
   const { filters, update, clear } = useFilters();
   const { openId, openTask, openNewTask } = useTaskModal();
   const storedView = usePrefs((s) => s.views[pageKey]);
@@ -90,6 +101,7 @@ export function TasksWorkspace({ pageKey, tasks, defaults = {}, emptyState, hide
           setView={(v) => setStoredView(pageKey, v)}
           views={views}
           hideClientFilter={hideClientFilter}
+          hideProjectFilter={hideProjectFilter}
           total={tasks.length}
           shown={visible.length}
         />

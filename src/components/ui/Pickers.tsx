@@ -1,7 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, Search, UserRound, X } from 'lucide-react';
-import type { Client, Member } from '../../../shared/types';
+import type { Client, Member, Project } from '../../../shared/types';
+import { PROJECT_STATUS_META } from '../../lib/constants';
 import { Avatar } from './Avatar';
+import { ProjectIcon } from './Badges';
 import { Popover } from './Popover';
 
 export interface Option {
@@ -214,6 +216,18 @@ export function clientOptions(clients: Client[]): Option[] {
   return [...clients]
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
     .map((c) => ({ value: c.id, label: c.name, icon: <span className="option-dot" style={{ background: c.color }} /> }));
+}
+
+/** Every project, sorted; finished ones go last. Callers that assign tasks should leave out finished projects. */
+export function projectOptions(projects: Project[]): Option[] {
+  return [...projects]
+    .sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || a.name.localeCompare(b.name, 'pt-BR'))
+    .map((p) => ({
+      value: p.id,
+      label: p.name,
+      hint: p.status === 'active' ? undefined : PROJECT_STATUS_META[p.status].label,
+      icon: <ProjectIcon color={p.color} />,
+    }));
 }
 
 export const noAssigneeIcon = (

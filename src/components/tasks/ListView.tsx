@@ -6,10 +6,10 @@ import { formatDate, isOverdue, todayKey } from '../../lib/dates';
 import { errorMessage } from '../../lib/api';
 import { useData } from '../../store/data';
 import { toast } from '../../store/ui';
-import { useClientsById, useMembersById } from '../../hooks/useLookups';
+import { useClientsById, useMembersById, useProjectsById } from '../../hooks/useLookups';
 import { useTaskActions } from '../../hooks/useTaskActions';
 import { Avatar } from '../ui/Avatar';
-import { ClientChip, DueChip, PriorityBadge } from '../ui/Badges';
+import { ClientChip, DueChip, PriorityBadge, ProjectChip } from '../ui/Badges';
 import { MenuItem, Popover } from '../ui/Popover';
 import { StatusMenu } from './StatusMenu';
 import type { TaskViewProps } from './types';
@@ -85,6 +85,7 @@ export function ListView(props: TaskViewProps) {
   const { tasks, sort, checked } = props;
   const membersById = useMembersById();
   const clientsById = useClientsById();
+  const projectsById = useProjectsById();
   const updateTask = useData((s) => s.updateTask);
   const today = todayKey();
 
@@ -127,6 +128,7 @@ export function ListView(props: TaskViewProps) {
         <tbody>
           {rows.map((task) => {
             const client = task.clientId ? clientsById.get(task.clientId) : undefined;
+            const project = task.projectId ? projectsById.get(task.projectId) : undefined;
             const assignee = task.assigneeId ? membersById.get(task.assigneeId) : undefined;
             const color = task.color ?? client?.color;
             const overdue = isOverdue(task, today);
@@ -172,7 +174,12 @@ export function ListView(props: TaskViewProps) {
                         {task.status === 'blocked' && <Lock size={13} className="row-flag blocked" aria-label="Bloqueada" />}
                         {task.onboarding && <Rocket size={13} className="row-flag" aria-label="Onboarding" />}
                       </span>
-                      {client && <ClientChip client={client} />}
+                      {(client || project) && (
+                        <span className="row-tags">
+                          <ClientChip client={client} />
+                          <ProjectChip project={project} />
+                        </span>
+                      )}
                     </div>
                   </div>
                 </td>

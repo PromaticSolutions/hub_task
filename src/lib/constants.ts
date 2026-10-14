@@ -1,4 +1,4 @@
-import type { Priority, Status } from '../../shared/types';
+import type { Priority, ProjectStatus, Status } from '../../shared/types';
 
 export const STATUS_META: Record<Status, { label: string; short: string; color: string }> = {
   todo: { label: 'A Fazer', short: 'A Fazer', color: 'var(--st-todo)' },
@@ -13,6 +13,12 @@ export const PRIORITY_META: Record<Priority, { label: string; weight: number }> 
   medium: { label: 'Média', weight: 2 },
   high: { label: 'Alta', weight: 3 },
   urgent: { label: 'Urgente', weight: 4 },
+};
+
+export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string }> = {
+  active: { label: 'Ativo' },
+  paused: { label: 'Pausado' },
+  done: { label: 'Concluído' },
 };
 
 /** Identification colors offered for clients, members and tasks. All work with white or dark text. */

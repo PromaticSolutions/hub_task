@@ -11,6 +11,7 @@ import { usePageHeader } from '../hooks/usePageHeader';
 import { Avatar } from '../components/ui/Avatar';
 import { EmptyState } from '../components/ui/EmptyState';
 import { MenuItem, Popover } from '../components/ui/Popover';
+import { SearchInput } from '../components/ui/SearchInput';
 
 function useTaskStats() {
   const tasks = useData((s) => s.tasks);
@@ -46,20 +47,12 @@ function useTaskStats() {
   }, [tasks]);
 }
 
-function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  return (
-    <label className="search-box">
-      <Search size={16} />
-      <input type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder} />
-    </label>
-  );
-}
-
 const norm = (s: string) => s.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 export function ClientsPage() {
   usePageHeader('Clientes', { subtitle: 'Cadastro e acompanhamento por cliente' });
   const clients = useData((s) => s.clients);
+  const projects = useData((s) => s.projects);
   const tasks = useData((s) => s.tasks);
   const deleteClient = useData((s) => s.deleteClient);
   const openClientForm = useUi((s) => s.openClientForm);
@@ -74,11 +67,16 @@ export function ClientsPage() {
 
   const remove = async (client: Client) => {
     const linked = tasks.filter((t) => t.clientId === client.id).length;
+    const linkedProjects = projects.filter((p) => p.clientId === client.id).length;
+    const details = [
+      linked && `${linked} tarefa(s) vinculada(s) a este cliente serão mantidas, mas ficarão sem cliente (mantendo a cor atual)`,
+      linkedProjects && `${linkedProjects} projeto(s) dele continuarão existindo, sem cliente`,
+    ]
+      .filter(Boolean)
+      .join('; ');
     const ok = await confirmAction({
       title: `Remover ${client.name}?`,
-      message: linked
-        ? `${linked} tarefa(s) vinculada(s) a este cliente serão mantidas, mas ficarão sem cliente (mantendo a cor atual). Esta ação não pode ser desfeita.`
-        : 'O cliente será removido. Esta ação não pode ser desfeita.',
+      message: details ? `${details}. Esta ação não pode ser desfeita.` : 'O cliente será removido. Esta ação não pode ser desfeita.',
       confirmLabel: 'Remover cliente',
     });
     if (!ok) return;

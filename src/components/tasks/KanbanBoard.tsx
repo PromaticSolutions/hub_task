@@ -28,7 +28,7 @@ import { errorMessage } from '../../lib/api';
 import { isOverdue, todayKey } from '../../lib/dates';
 import { useData } from '../../store/data';
 import { toast } from '../../store/ui';
-import { useClientsById, useMembersById } from '../../hooks/useLookups';
+import { useClientsById, useMembersById, useProjectsById } from '../../hooks/useLookups';
 import { TaskCard } from './TaskCard';
 import type { TaskViewProps } from './types';
 
@@ -72,6 +72,7 @@ const SortableTask = memo(function SortableTask({ task, selected, checked, onOpe
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const membersById = useMembersById();
   const clientsById = useClientsById();
+  const projectsById = useProjectsById();
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     listeners?.onKeyDown?.(e);
     if (e.key === 'Enter' && !e.defaultPrevented) onOpen(task.id);
@@ -89,6 +90,7 @@ const SortableTask = memo(function SortableTask({ task, selected, checked, onOpe
       <TaskCard
         task={task}
         client={task.clientId ? clientsById.get(task.clientId) : undefined}
+        project={task.projectId ? projectsById.get(task.projectId) : undefined}
         assignee={task.assigneeId ? membersById.get(task.assigneeId) : undefined}
         participants={task.participantIds.map((id) => membersById.get(id)).filter((m): m is NonNullable<typeof m> => !!m)}
         selected={selected}
@@ -177,6 +179,7 @@ export function KanbanBoard(props: TaskViewProps) {
   const updateTask = useData((s) => s.updateTask);
   const membersById = useMembersById();
   const clientsById = useClientsById();
+  const projectsById = useProjectsById();
   const allTasks = useData((s) => s.tasks);
 
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
@@ -338,6 +341,7 @@ export function KanbanBoard(props: TaskViewProps) {
           <TaskCard
             task={activeTask}
             client={activeTask.clientId ? clientsById.get(activeTask.clientId) : undefined}
+            project={activeTask.projectId ? projectsById.get(activeTask.projectId) : undefined}
             assignee={activeTask.assigneeId ? membersById.get(activeTask.assigneeId) : undefined}
             participants={activeTask.participantIds.map((id) => membersById.get(id)).filter((m): m is NonNullable<typeof m> => !!m)}
             overlay

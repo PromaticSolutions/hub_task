@@ -5,6 +5,8 @@ import type {
   ClientInput,
   Member,
   MemberInput,
+  Project,
+  ProjectInput,
   Settings,
   Snapshot,
   Task,
@@ -19,6 +21,7 @@ interface DataState {
   version: number;
   members: Member[];
   clients: Client[];
+  projects: Project[];
   tasks: Task[];
   settings: Settings;
   pending: number;
@@ -42,6 +45,8 @@ interface DataState {
   deleteMember: (id: string) => Promise<void>;
   saveClient: (input: ClientInput, id?: string) => Promise<Client>;
   deleteClient: (id: string) => Promise<void>;
+  saveProject: (input: ProjectInput, id?: string) => Promise<Project>;
+  deleteProject: (id: string) => Promise<void>;
   startOnboarding: (clientId: string, body: { assigneeId: string | null; startDate: string; stepIds: string[] }) => Promise<Task[]>;
   saveSettings: (settings: Settings) => Promise<void>;
   loadSampleData: () => Promise<void>;
@@ -69,6 +74,7 @@ export const useData = create<DataState>()((set, get) => {
       version: s.version,
       members: s.members,
       clients: s.clients,
+      projects: s.projects ?? [],
       tasks: s.tasks,
       settings: s.settings,
     });
@@ -98,6 +104,7 @@ export const useData = create<DataState>()((set, get) => {
     version: 0,
     members: [],
     clients: [],
+    projects: [],
     tasks: [],
     settings: { onboardingTemplate: [] },
     pending: 0,
@@ -240,6 +247,22 @@ export const useData = create<DataState>()((set, get) => {
     deleteClient: async (id) => {
       await mutate(() => request('DELETE', `/clients/${id}`));
       set((s) => ({ clients: s.clients.filter((c) => c.id !== id) }));
+      await get().refresh();
+    },
+
+    saveProject: async (input, id) => {
+      const project = await mutate(() =>
+        id ? request<Project>('PATCH', `/projects/${id}`, input) : request<Project>('POST', '/projects', input),
+      );
+      set((s) => ({
+        projects: id ? s.projects.map((p) => (p.id === id ? project : p)) : [...s.projects, project],
+      }));
+      return project;
+    },
+
+    deleteProject: async (id) => {
+      await mutate(() => request('DELETE', `/projects/${id}`));
+      set((s) => ({ projects: s.projects.filter((p) => p.id !== id) }));
       await get().refresh();
     },
 

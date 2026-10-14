@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Client, Member, TaskInput } from '../../shared/types';
+import type { Client, Member, Project, TaskInput } from '../../shared/types';
 import type { ViewMode } from '../lib/constants';
 
 export type ThemePref = 'light' | 'dark' | 'system';
@@ -66,6 +66,7 @@ interface UiState {
   confirm: (ConfirmOptions & { resolve: (ok: boolean) => void }) | null;
   clientForm: { client: Client | null } | null;
   memberForm: { member: Member | null } | null;
+  projectForm: { project: Project | null; clientId: string | null } | null;
   onboardingForm: { clientId: string | null } | null;
   newTaskDefaults: Partial<TaskInput>;
   /** Defaults the current page wants for tasks created from the top bar (e.g. its client). */
@@ -75,6 +76,8 @@ interface UiState {
   dismissToast: (id: number) => void;
   openClientForm: (client?: Client | null) => void;
   openMemberForm: (member?: Member | null) => void;
+  /** Opens the project form to edit `project`, or to create one (optionally for a client). */
+  openProjectForm: (project?: Project | null, clientId?: string | null) => void;
   openOnboardingForm: (clientId?: string | null) => void;
   closeForms: () => void;
   setNewTaskDefaults: (defaults: Partial<TaskInput>) => void;
@@ -89,6 +92,7 @@ export const useUi = create<UiState>()((set, get) => ({
   confirm: null,
   clientForm: null,
   memberForm: null,
+  projectForm: null,
   onboardingForm: null,
   newTaskDefaults: {},
   pageTaskDefaults: {},
@@ -102,8 +106,9 @@ export const useUi = create<UiState>()((set, get) => ({
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   openClientForm: (client = null) => set({ clientForm: { client } }),
   openMemberForm: (member = null) => set({ memberForm: { member } }),
+  openProjectForm: (project = null, clientId = null) => set({ projectForm: { project, clientId } }),
   openOnboardingForm: (clientId = null) => set({ onboardingForm: { clientId } }),
-  closeForms: () => set({ clientForm: null, memberForm: null, onboardingForm: null }),
+  closeForms: () => set({ clientForm: null, memberForm: null, projectForm: null, onboardingForm: null }),
   setNewTaskDefaults: (newTaskDefaults) => set({ newTaskDefaults }),
 }));
 

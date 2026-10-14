@@ -14,6 +14,7 @@ const taskFields = {
   title: z.string().trim().min(1, 'informe um título').max(200),
   description: z.string().max(20000).optional(),
   clientId: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
   color: hex.nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   participantIds: z.array(z.string()).max(50).optional(),
@@ -34,6 +35,7 @@ const bulkSchema = z.object({
   action: z.discriminatedUnion('type', [
     z.object({ type: z.literal('status'), status: z.enum(STATUSES) }),
     z.object({ type: z.literal('assignee'), assigneeId: z.string().nullable() }),
+    z.object({ type: z.literal('project'), projectId: z.string().nullable() }),
     z.object({ type: z.literal('archive'), archived: z.boolean() }),
     z.object({ type: z.literal('delete') }),
   ]),
@@ -97,6 +99,7 @@ tasksRouter.post(
             title: `${src.title} (cópia)`,
             description: src.description,
             clientId: src.clientId,
+            projectId: src.projectId,
             color: src.color,
             assigneeId: src.assigneeId,
             participantIds: src.participantIds,
@@ -154,6 +157,7 @@ tasksRouter.post(
       for (const task of tasks) {
         if (action.type === 'status') applyPatch(db, task, { status: action.status }, actor);
         if (action.type === 'assignee') applyPatch(db, task, { assigneeId: action.assigneeId }, actor);
+        if (action.type === 'project') applyPatch(db, task, { projectId: action.projectId }, actor);
         if (action.type === 'archive') applyPatch(db, task, { archived: action.archived }, actor);
       }
       return tasks;

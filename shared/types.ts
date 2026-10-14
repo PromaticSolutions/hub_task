@@ -6,6 +6,9 @@ export type Priority = (typeof PRIORITIES)[number];
 
 export type TaskScope = 'team' | 'personal';
 
+export const PROJECT_STATUSES = ['active', 'paused', 'done'] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
 export interface Member {
   id: string;
   name: string;
@@ -23,6 +26,16 @@ export interface Client {
   email: string;
   phone: string;
   notes: string;
+  createdAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  color: string;
+  description: string;
+  clientId: string | null;
+  status: ProjectStatus;
   createdAt: string;
 }
 
@@ -50,6 +63,7 @@ export type HistoryType =
   | 'status'
   | 'assignee'
   | 'participants'
+  | 'project'
   | 'dueDate'
   | 'archived'
   | 'restored';
@@ -70,6 +84,7 @@ export interface Task {
   description: string;
   descriptionMentions: string[];
   clientId: string | null;
+  projectId: string | null;
   color: string | null;
   assigneeId: string | null;
   participantIds: string[];
@@ -107,6 +122,7 @@ export interface Snapshot {
   version: number;
   members: Member[];
   clients: Client[];
+  projects: Project[];
   tasks: Task[];
   settings: Settings;
 }
@@ -115,6 +131,7 @@ export interface TaskInput {
   title: string;
   description?: string;
   clientId?: string | null;
+  projectId?: string | null;
   color?: string | null;
   assigneeId?: string | null;
   participantIds?: string[];
@@ -131,10 +148,12 @@ export type TaskPatch = Partial<TaskInput> & { archived?: boolean };
 
 export type MemberInput = Pick<Member, 'name' | 'email' | 'role' | 'color'>;
 export type ClientInput = Pick<Client, 'name' | 'color' | 'contactName' | 'email' | 'phone' | 'notes'>;
+export type ProjectInput = Pick<Project, 'name' | 'color' | 'description' | 'clientId' | 'status'>;
 
 export type BulkAction =
   | { type: 'status'; status: Status }
   | { type: 'assignee'; assigneeId: string | null }
+  | { type: 'project'; projectId: string | null }
   | { type: 'archive'; archived: boolean }
   | { type: 'delete' };
 

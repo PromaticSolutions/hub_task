@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Client, Member } from '../../shared/types';
+import type { Client, Member, Project } from '../../shared/types';
 import { useData } from '../store/data';
 import { usePrefs } from '../store/ui';
 
@@ -11,6 +11,11 @@ export function useMembersById() {
 export function useClientsById() {
   const clients = useData((s) => s.clients);
   return useMemo(() => new Map<string, Client>(clients.map((c) => [c.id, c])), [clients]);
+}
+
+export function useProjectsById() {
+  const projects = useData((s) => s.projects);
+  return useMemo(() => new Map<string, Project>(projects.map((p) => [p.id, p])), [projects]);
 }
 
 /** The member chosen in Settings as "who am I" — only if it still exists. */

@@ -1,5 +1,5 @@
 import postgres from 'postgres';
-import type { Client, Member, Settings, Task } from '../shared/types.js';
+import type { Client, Member, Project, Settings, Task } from '../shared/types.js';
 import { defaultSettings } from './defaults.js';
 import type { DbShape, StoreBackend } from './store.js';
 
@@ -45,6 +45,16 @@ create table if not exists clients (
   created_at timestamptz not null default now()
 );
 
+create table if not exists projects (
+  id uuid primary key,
+  name text not null,
+  color text not null,
+  description text not null default '',
+  client_id uuid references clients (id) on delete set null,
+  status text not null default 'active',
+  created_at timestamptz not null default now()
+);
+
 create table if not exists tasks (
   id uuid primary key,
   number integer not null,
@@ -52,6 +62,7 @@ create table if not exists tasks (
   description text not null default '',
   description_mentions jsonb not null default '[]',
   client_id uuid references clients (id) on delete set null,
+  project_id uuid references projects (id) on delete set null,
   color text,
   assignee_id uuid references members (id) on delete set null,
   participant_ids jsonb not null default '[]',
@@ -75,11 +86,25 @@ create table if not exists tasks (
 create index if not exists tasks_status_idx on tasks (status);
 create index if not exists tasks_client_idx on tasks (client_id);
 
+-- Databases created before projects existed get the column here. Checking first avoids
+-- taking an exclusive lock on tasks at every cold start.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = current_schema() and table_name = 'tasks' and column_name = 'project_id'
+  ) then
+    alter table tasks add column project_id uuid references projects (id) on delete set null;
+  end if;
+end $$;
+create index if not exists tasks_project_idx on tasks (project_id);
+
 -- Only the server (table owner) reads these tables; Supabase's public API gets no access.
 alter table app_meta enable row level security;
 alter table app_settings enable row level security;
 alter table members enable row level security;
 alter table clients enable row level security;
+alter table projects enable row level security;
 alter table tasks enable row level security;
 `;
 
@@ -126,6 +151,18 @@ function rowToClient(r: Row): Client {
   };
 }
 
+function rowToProject(r: Row): Project {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    color: r.color as string,
+    description: r.description as string,
+    clientId: (r.client_id as string | null) ?? null,
+    status: r.status as Project['status'],
+    createdAt: iso(r.created_at),
+  };
+}
+
 function rowToTask(r: Row): Task {
   return {
     id: r.id as string,
@@ -134,6 +171,7 @@ function rowToTask(r: Row): Task {
     description: r.description as string,
     descriptionMentions: r.description_mentions as string[],
     clientId: (r.client_id as string | null) ?? null,
+    projectId: (r.project_id as string | null) ?? null,
     color: (r.color as string | null) ?? null,
     assigneeId: (r.assignee_id as string | null) ?? null,
     participantIds: r.participant_ids as string[],
@@ -181,6 +219,16 @@ const CLIENT_COLS: Col<Client>[] = [
   ['created_at', 'text::timestamptz', (c) => c.createdAt],
 ];
 
+const PROJECT_COLS: Col<Project>[] = [
+  ['id', 'uuid', (p) => p.id],
+  ['name', 'text', (p) => p.name],
+  ['color', 'text', (p) => p.color],
+  ['description', 'text', (p) => p.description],
+  ['client_id', 'uuid', (p) => p.clientId],
+  ['status', 'text', (p) => p.status],
+  ['created_at', 'text::timestamptz', (p) => p.createdAt],
+];
+
 const TASK_COLS: Col<Task>[] = [
   ['id', 'uuid', (t) => t.id],
   ['number', 'int', (t) => t.number],
@@ -188,6 +236,7 @@ const TASK_COLS: Col<Task>[] = [
   ['description', 'text', (t) => t.description],
   ['description_mentions', 'text::jsonb', (t) => json(t.descriptionMentions)],
   ['client_id', 'uuid', (t) => t.clientId],
+  ['project_id', 'uuid', (t) => t.projectId],
   ['color', 'text', (t) => t.color],
   ['assignee_id', 'uuid', (t) => t.assigneeId],
   ['participant_ids', 'text::jsonb', (t) => json(t.participantIds)],
@@ -227,6 +276,7 @@ async function loadAll(q: Sql | Tx): Promise<{ db: DbShape; version: number }> {
   const [settingsRow] = await q`select data from app_settings where id = 1`;
   const members = await q`select * from members order by created_at, id`;
   const clients = await q`select * from clients order by created_at, id`;
+  const projects = await q`select * from projects order by created_at, id`;
   const tasks = await q`select *, due_date::text as due_date_text from tasks order by number`;
   return {
     version: (meta?.version as number) ?? 1,
@@ -235,6 +285,7 @@ async function loadAll(q: Sql | Tx): Promise<{ db: DbShape; version: number }> {
       settings: (settingsRow?.data as Settings) ?? defaultSettings(),
       members: members.map(rowToMember),
       clients: clients.map(rowToClient),
+      projects: projects.map(rowToProject),
       tasks: tasks.map(rowToTask),
     },
   };
@@ -244,7 +295,7 @@ function index<T extends { id: string }>(list: T[]) {
   return new Map(list.map((e) => [e.id, JSON.stringify(e)]));
 }
 
-/** Writes only what changed. Order respects foreign keys (people before tasks, tasks before people are deleted). */
+/** Writes only what changed. Order respects foreign keys (people and projects before tasks, tasks before them are deleted). */
 async function persistChanges(tx: Tx, before: ReturnType<typeof snapshotOf>, db: DbShape) {
   const changed = <T extends { id: string }>(prev: Map<string, string>, list: T[]) =>
     list.filter((e) => prev.get(e.id) !== JSON.stringify(e));
@@ -255,8 +306,10 @@ async function persistChanges(tx: Tx, before: ReturnType<typeof snapshotOf>, db:
 
   for (const m of changed(before.members, db.members)) await upsert(tx, 'members', MEMBER_COLS, m);
   for (const c of changed(before.clients, db.clients)) await upsert(tx, 'clients', CLIENT_COLS, c);
+  for (const p of changed(before.projects, db.projects)) await upsert(tx, 'projects', PROJECT_COLS, p);
   for (const t of changed(before.tasks, db.tasks)) await upsert(tx, 'tasks', TASK_COLS, t);
   await removeIds(tx, 'tasks', removed(before.tasks, db.tasks));
+  await removeIds(tx, 'projects', removed(before.projects, db.projects));
   await removeIds(tx, 'clients', removed(before.clients, db.clients));
   await removeIds(tx, 'members', removed(before.members, db.members));
   if (JSON.stringify(db.settings) !== before.settings) {
@@ -271,6 +324,7 @@ function snapshotOf(db: DbShape) {
   return {
     members: index(db.members),
     clients: index(db.clients),
+    projects: index(db.projects),
     tasks: index(db.tasks),
     settings: JSON.stringify(db.settings),
   };

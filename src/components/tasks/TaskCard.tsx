@@ -1,13 +1,14 @@
 import { memo, type MouseEvent } from 'react';
 import { CheckCircle2, Lock, MessageSquare, Paperclip, Rocket, UserRound } from 'lucide-react';
-import type { Client, Member, Task } from '../../../shared/types';
+import type { Client, Member, Project, Task } from '../../../shared/types';
 import { isOverdue } from '../../lib/dates';
 import { Avatar, AvatarStack } from '../ui/Avatar';
-import { ClientChip, DueChip, PriorityBadge } from '../ui/Badges';
+import { ClientChip, DueChip, PriorityBadge, ProjectChip } from '../ui/Badges';
 
 interface TaskCardProps {
   task: Task;
   client: Client | undefined;
+  project: Project | undefined;
   assignee: Member | undefined;
   participants: Member[];
   selected?: boolean;
@@ -20,6 +21,7 @@ interface TaskCardProps {
 export const TaskCard = memo(function TaskCard({
   task,
   client,
+  project,
   assignee,
   participants,
   selected,
@@ -90,6 +92,7 @@ export const TaskCard = memo(function TaskCard({
       <div className="task-card-meta">
         <PriorityBadge priority={task.priority} />
         <DueChip task={task} />
+        <ProjectChip project={project} />
         {task.onboarding && (
           <span className="badge task-card-onb" title="Tarefa de onboarding">
             <Rocket size={12} /> Onboarding

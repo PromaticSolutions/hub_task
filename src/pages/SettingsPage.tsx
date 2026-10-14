@@ -174,11 +174,12 @@ export function SettingsPage() {
   const setTheme = usePrefs((s) => s.setTheme);
   const members = useData((s) => s.members);
   const clients = useData((s) => s.clients);
+  const projects = useData((s) => s.projects);
   const tasks = useData((s) => s.tasks);
   const loadSampleData = useData((s) => s.loadSampleData);
   const location = useLocation();
   const [loadingSample, setLoadingSample] = useState(false);
-  const empty = !members.length && !clients.length && !tasks.length;
+  const empty = !members.length && !clients.length && !projects.length && !tasks.length;
 
   useEffect(() => {
     if (!location.hash) return;
@@ -232,6 +233,7 @@ export function SettingsPage() {
         <dl className="data-stats">
           <div><dt>Tarefas ativas</dt><dd>{counts.active}</dd></div>
           <div><dt>Arquivadas</dt><dd>{counts.archived}</dd></div>
+          <div><dt>Projetos</dt><dd>{projects.length}</dd></div>
           <div><dt>Clientes</dt><dd>{clients.length}</dd></div>
           <div><dt>Membros</dt><dd>{members.length}</dd></div>
           <div><dt>Comentários</dt><dd>{counts.comments}</dd></div>

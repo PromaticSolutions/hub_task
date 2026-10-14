@@ -19,6 +19,7 @@ import {
   Flag,
   Palette,
   Eye,
+  Folder,
 } from 'lucide-react';
 import { PRIORITIES, type Priority, type Status, type Task, type TaskInput, type TaskScope } from '../../../shared/types';
 import { PRIORITY_META } from '../../lib/constants';
@@ -26,7 +27,7 @@ import { errorMessage } from '../../lib/api';
 import { addDaysKey, formatDateTime, isOverdue, todayKey } from '../../lib/dates';
 import { useData } from '../../store/data';
 import { confirmAction, toast, useUi } from '../../store/ui';
-import { useClientsById, useCurrentUser, useMembersById } from '../../hooks/useLookups';
+import { useClientsById, useCurrentUser, useMembersById, useProjectsById } from '../../hooks/useLookups';
 import { useTaskActions } from '../../hooks/useTaskActions';
 import { useTaskModal } from '../../hooks/useTaskModal';
 import { Avatar } from '../ui/Avatar';
@@ -35,7 +36,8 @@ import { EmptyState } from '../ui/EmptyState';
 import { MentionText, MentionTextarea } from '../ui/Mentions';
 import { Modal } from '../ui/Modal';
 import { MenuItem, Popover } from '../ui/Popover';
-import { MultiPicker, SelectPicker, clientOptions, memberOptions, noAssigneeIcon } from '../ui/Pickers';
+import { MultiPicker, SelectPicker, clientOptions, memberOptions, noAssigneeIcon, projectOptions } from '../ui/Pickers';
+import { ProjectIcon } from '../ui/Badges';
 import { StatusMenu } from '../tasks/StatusMenu';
 import { PendingAttachments, TaskAttachments } from './Attachments';
 import { TaskActivity } from './Activity';
@@ -44,6 +46,7 @@ interface Draft {
   title: string;
   description: string;
   clientId: string | null;
+  projectId: string | null;
   color: string | null;
   assigneeId: string | null;
   participantIds: string[];
@@ -58,6 +61,7 @@ const DRAFT_KEYS: (keyof Draft)[] = [
   'title',
   'description',
   'clientId',
+  'projectId',
   'color',
   'assigneeId',
   'participantIds',
@@ -73,6 +77,7 @@ function draftFromTask(t: Task): Draft {
     title: t.title,
     description: t.description,
     clientId: t.clientId,
+    projectId: t.projectId,
     color: t.color,
     assigneeId: t.assigneeId,
     participantIds: t.participantIds,
@@ -89,6 +94,7 @@ function draftFromDefaults(d: Partial<TaskInput>): Draft {
     title: d.title ?? '',
     description: d.description ?? '',
     clientId: d.clientId ?? null,
+    projectId: d.projectId ?? null,
     color: d.color ?? null,
     assigneeId: d.assigneeId ?? null,
     participantIds: d.participantIds ?? [],
@@ -127,11 +133,13 @@ function TaskModal({ id, onClose }: { id: string; onClose: () => void }) {
   const task = useData((s) => (isNew ? undefined : s.tasks.find((t) => t.id === id)));
   const members = useData((s) => s.members);
   const clients = useData((s) => s.clients);
+  const projects = useData((s) => s.projects);
   const createTask = useData((s) => s.createTask);
   const updateTask = useData((s) => s.updateTask);
   const uploadAttachments = useData((s) => s.uploadAttachments);
   const membersById = useMembersById();
   const clientsById = useClientsById();
+  const projectsById = useProjectsById();
   const me = useCurrentUser();
   const { openTask } = useTaskModal();
   const { duplicate, setArchived, remove } = useTaskActions();
@@ -157,6 +165,11 @@ function TaskModal({ id, onClose }: { id: string; onClose: () => void }) {
       if (key === 'assigneeId' && value) {
         const parts = (next.participantIds ?? base.participantIds).filter((p) => p !== value);
         if (parts.length !== (next.participantIds ?? base.participantIds).length) next.participantIds = parts;
+      }
+      // Picking a project that belongs to a client fills the client when the task has none yet.
+      if (key === 'projectId' && value) {
+        const projectClient = projectsById.get(value as string)?.clientId;
+        if (projectClient && !(next.clientId ?? base.clientId)) next.clientId = projectClient;
       }
       return next;
     });
@@ -240,6 +253,11 @@ function TaskModal({ id, onClose }: { id: string; onClose: () => void }) {
 
   const memberOpts = useMemo(() => memberOptions(members), [members]);
   const clientOpts = useMemo(() => clientOptions(clients), [clients]);
+  // Finished projects are only offered when the task already belongs to one.
+  const projectOpts = useMemo(
+    () => projectOptions(projects.filter((p) => p.status !== 'done' || p.id === base.projectId)),
+    [projects, base.projectId],
+  );
 
   if (!isNew && !task) {
     return (
@@ -260,6 +278,7 @@ function TaskModal({ id, onClose }: { id: string; onClose: () => void }) {
   }
 
   const client = draft.clientId ? clientsById.get(draft.clientId) : undefined;
+  const project = draft.projectId ? projectsById.get(draft.projectId) : undefined;
   const color = draft.color ?? client?.color ?? null;
   const creator = task?.createdBy ? membersById.get(task.createdBy) : null;
   const overdue = isOverdue(draft);
@@ -315,6 +334,12 @@ function TaskModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span className="chip" style={{ ['--chip-color' as string]: client.color }}>
                 <span className="chip-dot" />
                 {client.name}
+              </span>
+            )}
+            {project && (
+              <span className="chip project-chip" style={{ ['--chip-color' as string]: project.color }}>
+                <ProjectIcon color={project.color} size={11} />
+                {project.name}
               </span>
             )}
             {draft.scope === 'personal' && <span className="badge tm-tag">Pessoal</span>}
@@ -462,6 +487,18 @@ function TaskModal({ id, onClose }: { id: string; onClose: () => void }) {
                   </button>
                 ))}
               </div>
+            </Prop>
+
+            <Prop icon={<Folder size={14} />} label="Projeto">
+              <SelectPicker
+                value={draft.projectId}
+                onChange={(v) => set('projectId', v)}
+                options={projectOpts}
+                placeholder="Sem projeto"
+                nullable
+                nullLabel="Sem projeto"
+                ariaLabel="Projeto"
+              />
             </Prop>
 
             <Prop icon={<Building2 size={14} />} label="Cliente">

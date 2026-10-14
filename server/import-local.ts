@@ -38,13 +38,14 @@ async function main() {
     if (!isEmpty(db)) throw new Error('O banco recebeu dados durante a importação. Nada foi gravado.');
     db.members = local.members;
     db.clients = local.clients;
+    db.projects = local.projects;
     db.tasks = local.tasks;
     db.settings = local.settings;
     db.taskCounter = local.taskCounter;
   }, () => 1);
 
   console.log(
-    `Importação concluída: ${local.members.length} membros, ${local.clients.length} clientes, ${local.tasks.length} tarefas, ${attachments.length - missing} anexos.`,
+    `Importação concluída: ${local.members.length} membros, ${local.clients.length} clientes, ${local.projects.length} projetos, ${local.tasks.length} tarefas, ${attachments.length - missing} anexos.`,
   );
   if (missing) console.log(`${missing} anexo(s) não foram encontrados em ${UPLOAD_DIR} e ficaram sem arquivo.`);
   process.exit(0);

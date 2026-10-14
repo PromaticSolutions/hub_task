@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { extractMentions, type Client, type Member, type Priority, type Status } from '../shared/types.js';
+import { extractMentions, type Client, type Member, type Priority, type Project, type Status } from '../shared/types.js';
 import { addHistory, createTask } from './domain.js';
 import type { DbShape } from './store.js';
 
@@ -45,6 +45,24 @@ export function loadSampleData(db: DbShape) {
   const [ana, bruno, carla, diego, elisa] = members;
   const [padaria, clinica, studio, construtora] = clients;
 
+  const projects: Project[] = (
+    [
+      ['Site da clínica', '#0891b2', clinica, 'Novo site institucional com agendamento online.'],
+      ['Lançamento Residencial Horizonte', '#dc2626', construtora, 'Landing page, SEO e materiais do novo empreendimento.'],
+      ['Redes sociais Studio Fit', '#7c3aed', studio, 'Conteúdo mensal e campanhas pagas.'],
+    ] as const
+  ).map(([name, color, client, description], i) => ({
+    id: randomUUID(),
+    name,
+    color,
+    description,
+    clientId: client.id,
+    status: 'active',
+    createdAt: daysAgo(40 - i * 5),
+  }));
+  db.projects.push(...projects);
+  const [siteClinica, lancamento, redes] = projects;
+
   type Seed = {
     title: string;
     description?: string;
@@ -57,21 +75,22 @@ export function loadSampleData(db: DbShape) {
     createdAgo: number;
     onboarding?: boolean;
     personal?: Member;
+    project?: Project;
     comments?: [Member, string][];
   };
 
   const seeds: Seed[] = [
     { title: 'Criar cardápio digital', description: 'Cardápio responsivo com fotos dos produtos e link para o WhatsApp.', client: padaria, assignee: carla, participants: [bruno], priority: 'high', status: 'in_progress', due: 3, createdAgo: 8, comments: [[ana, '@Carla Mendes as fotos novas já estão na pasta compartilhada.']] },
     { title: 'Identidade visual de Natal', description: 'Peças para redes sociais e vitrine da loja.', client: padaria, assignee: bruno, priority: 'medium', status: 'todo', due: 12, createdAgo: 3 },
-    { title: 'Aprovar layout do site', description: 'Aguardando retorno do cliente sobre as cores da página inicial.', client: clinica, assignee: elisa, participants: [bruno, carla], priority: 'urgent', status: 'blocked', due: -2, createdAgo: 14, comments: [[elisa, 'Cliente pediu mais uma semana para revisar. @Ana Souza podemos ajustar o cronograma?']] },
-    { title: 'Agendamento online', description: 'Integração do formulário de agendamento com a agenda da clínica.', client: clinica, assignee: carla, priority: 'high', status: 'review', due: 1, createdAgo: 20 },
-    { title: 'Calendário de posts de novembro', client: studio, assignee: diego, participants: [bruno], priority: 'medium', status: 'in_progress', due: 5, createdAgo: 6 },
-    { title: 'Relatório mensal de métricas', description: 'Consolidar alcance, engajamento e conversões do mês anterior.', client: studio, assignee: diego, priority: 'low', status: 'done', due: -5, createdAgo: 18 },
-    { title: 'Landing page do novo empreendimento', client: construtora, assignee: carla, participants: [bruno, ana], priority: 'urgent', status: 'todo', due: -1, createdAgo: 10 },
+    { title: 'Aprovar layout do site', description: 'Aguardando retorno do cliente sobre as cores da página inicial.', client: clinica, project: siteClinica, assignee: elisa, participants: [bruno, carla], priority: 'urgent', status: 'blocked', due: -2, createdAgo: 14, comments: [[elisa, 'Cliente pediu mais uma semana para revisar. @Ana Souza podemos ajustar o cronograma?']] },
+    { title: 'Agendamento online', description: 'Integração do formulário de agendamento com a agenda da clínica.', client: clinica, project: siteClinica, assignee: carla, priority: 'high', status: 'review', due: 1, createdAgo: 20 },
+    { title: 'Calendário de posts de novembro', client: studio, project: redes, assignee: diego, participants: [bruno], priority: 'medium', status: 'in_progress', due: 5, createdAgo: 6 },
+    { title: 'Relatório mensal de métricas', description: 'Consolidar alcance, engajamento e conversões do mês anterior.', client: studio, project: redes, assignee: diego, priority: 'low', status: 'done', due: -5, createdAgo: 18 },
+    { title: 'Landing page do novo empreendimento', client: construtora, project: lancamento, assignee: carla, participants: [bruno, ana], priority: 'urgent', status: 'todo', due: -1, createdAgo: 10 },
     { title: 'Fotos da obra para o portfólio', client: construtora, assignee: bruno, priority: 'low', status: 'done', due: -8, createdAgo: 25 },
     { title: 'Revisar contrato de manutenção', client: clinica, assignee: ana, priority: 'medium', status: 'review', due: 6, createdAgo: 4 },
-    { title: 'Campanha de matrículas', description: 'Anúncios patrocinados para o público da região.', client: studio, assignee: diego, participants: [elisa], priority: 'high', status: 'todo', due: 9, createdAgo: 2 },
-    { title: 'Ajustar SEO do site institucional', client: construtora, assignee: null, priority: 'medium', status: 'todo', due: null, createdAgo: 1 },
+    { title: 'Campanha de matrículas', description: 'Anúncios patrocinados para o público da região.', client: studio, project: redes, assignee: diego, participants: [elisa], priority: 'high', status: 'todo', due: 9, createdAgo: 2 },
+    { title: 'Ajustar SEO do site institucional', client: construtora, project: lancamento, assignee: null, priority: 'medium', status: 'todo', due: null, createdAgo: 1 },
     { title: 'Reunião de kickoff', description: 'Alinhar objetivos, expectativas e pontos de contato com o cliente.', client: construtora, assignee: elisa, priority: 'high', status: 'done', due: -12, createdAgo: 30, onboarding: true },
     { title: 'Coletar acessos e materiais', description: 'Solicitar logins, identidade visual, documentos e referências.', client: construtora, assignee: elisa, priority: 'high', status: 'in_progress', due: -4, createdAgo: 30, onboarding: true },
     { title: 'Definir cronograma de entregas', client: construtora, assignee: ana, priority: 'medium', status: 'todo', due: 2, createdAgo: 30, onboarding: true },
@@ -85,6 +104,7 @@ export function loadSampleData(db: DbShape) {
         title: s.title,
         description: s.description ?? '',
         clientId: s.client?.id ?? null,
+        projectId: s.project?.id ?? null,
         assigneeId: s.assignee?.id ?? null,
         participantIds: (s.participants ?? []).map((p) => p.id),
         priority: s.priority,

@@ -17,7 +17,7 @@ import { PRIORITY_META, SORT_LABELS, STATUS_META, VIEW_LABELS, type SortKey, typ
 import { DUE_PRESETS, NONE, countActiveFilters, hasAnyFilter, type DuePreset, type Filters } from '../../lib/filters';
 import { formatDay } from '../../lib/dates';
 import { useData } from '../../store/data';
-import { MultiPicker, clientOptions, memberOptions, noAssigneeIcon } from '../ui/Pickers';
+import { MultiPicker, clientOptions, memberOptions, noAssigneeIcon, projectOptions } from '../ui/Pickers';
 import { Popover } from '../ui/Popover';
 
 const VIEW_ICONS = { kanban: Columns3, list: List, calendar: CalendarDays };
@@ -36,6 +36,7 @@ interface ToolbarProps {
   setView: (v: ViewMode) => void;
   views: ViewMode[];
   hideClientFilter?: boolean;
+  hideProjectFilter?: boolean;
   total: number;
   shown: number;
 }
@@ -177,9 +178,10 @@ function SortControl({ filters, update }: Pick<ToolbarProps, 'filters' | 'update
   );
 }
 
-export function Toolbar({ filters, update, clear, view, setView, views, hideClientFilter, total, shown }: ToolbarProps) {
+export function Toolbar({ filters, update, clear, view, setView, views, hideClientFilter, hideProjectFilter, total, shown }: ToolbarProps) {
   const members = useData((s) => s.members);
   const clients = useData((s) => s.clients);
+  const projects = useData((s) => s.projects);
   const activeCount = countActiveFilters(filters);
   const [expanded, setExpanded] = useState(activeCount > 0);
   const [query, setQuery] = useState(filters.q);
@@ -232,6 +234,11 @@ export function Toolbar({ filters, update, clear, view, setView, views, hideClie
     { value: NONE, label: 'Sem cliente', icon: <span className="option-dot" style={{ background: 'var(--border-strong)' }} /> },
     ...clientOptions(clients),
   ];
+  const projectOpts = [
+    { value: NONE, label: 'Sem projeto', icon: <span className="option-dot" style={{ background: 'var(--border-strong)' }} /> },
+    ...projectOptions(projects),
+  ];
+  const showProjectFilter = !hideProjectFilter && (projects.length > 0 || filters.projects.length > 0);
 
   const chips: { key: string; label: string; remove: () => void }[] = [];
   if (filters.q.trim()) chips.push({ key: 'q', label: `Busca: "${filters.q.trim()}"`, remove: () => { setQuery(''); update({ q: '' }); } });
@@ -240,6 +247,13 @@ export function Toolbar({ filters, update, clear, view, setView, views, hideClie
       key: `c-${id}`,
       label: `Cliente: ${id === NONE ? 'Sem cliente' : clients.find((c) => c.id === id)?.name ?? '—'}`,
       remove: () => update({ clients: filters.clients.filter((x) => x !== id) }),
+    }),
+  );
+  filters.projects.forEach((id) =>
+    chips.push({
+      key: `pr-${id}`,
+      label: `Projeto: ${id === NONE ? 'Sem projeto' : projects.find((p) => p.id === id)?.name ?? '—'}`,
+      remove: () => update({ projects: filters.projects.filter((x) => x !== id) }),
     }),
   );
   filters.assignees.forEach((id) =>
@@ -339,6 +353,16 @@ export function Toolbar({ filters, update, clear, view, setView, views, hideClie
               onChange={(clients) => update({ clients })}
               options={clientOpts}
               emptyText="Nenhum cliente cadastrado"
+            />
+          )}
+          {showProjectFilter && (
+            <MultiPicker
+              label="Projeto"
+              ariaLabel="Filtrar por projeto"
+              values={filters.projects}
+              onChange={(projects) => update({ projects })}
+              options={projectOpts}
+              emptyText="Nenhum projeto cadastrado"
             />
           )}
           <MultiPicker

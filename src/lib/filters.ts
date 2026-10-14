@@ -19,6 +19,7 @@ export type DuePreset = keyof typeof DUE_PRESETS;
 export interface Filters {
   q: string;
   clients: string[];
+  projects: string[];
   assignees: string[];
   statuses: Status[];
   priorities: Priority[];
@@ -33,6 +34,7 @@ export interface Filters {
 export const EMPTY_FILTERS: Filters = {
   q: '',
   clients: [],
+  projects: [],
   assignees: [],
   statuses: [],
   priorities: [],
@@ -53,6 +55,7 @@ export function filtersFromParams(params: URLSearchParams): Filters {
   return {
     q: params.get('q') ?? '',
     clients: list(params.get('client')),
+    projects: list(params.get('project')),
     assignees: list(params.get('assignee')),
     statuses: list(params.get('status')).filter((s): s is Status => (STATUSES as readonly string[]).includes(s)),
     priorities: list(params.get('priority')).filter((p): p is Priority => (PRIORITIES as readonly string[]).includes(p)),
@@ -74,6 +77,7 @@ export function writeFilters(params: URLSearchParams, f: Filters): URLSearchPara
   };
   put('q', f.q.trim() ? f.q : null);
   put('client', f.clients.join(','));
+  put('project', f.projects.join(','));
   put('assignee', f.assignees.join(','));
   put('status', f.statuses.join(','));
   put('priority', f.priorities.join(','));
@@ -89,6 +93,7 @@ export function writeFilters(params: URLSearchParams, f: Filters): URLSearchPara
 export function countActiveFilters(f: Filters): number {
   return (
     (f.clients.length ? 1 : 0) +
+    (f.projects.length ? 1 : 0) +
     (f.assignees.length ? 1 : 0) +
     (f.statuses.length ? 1 : 0) +
     (f.priorities.length ? 1 : 0) +
@@ -142,6 +147,7 @@ export function applyFilters(tasks: Task[], f: Filters): Task[] {
       if (!hay.includes(q)) return false;
     }
     if (f.clients.length && !f.clients.includes(t.clientId ?? NONE)) return false;
+    if (f.projects.length && !f.projects.includes(t.projectId ?? NONE)) return false;
     if (f.assignees.length) {
       const people = [t.assigneeId ?? NONE];
       if (!f.assignees.some((a) => people.includes(a))) return false;

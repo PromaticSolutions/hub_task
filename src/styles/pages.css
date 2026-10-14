@@ -318,6 +318,11 @@
   gap: 6px;
 }
 
+/* Links hold only the name, so they can ellipsize (text-overflow does not apply to flex containers). */
+a.entity-name {
+  display: block;
+}
+
 a.entity-name:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -1283,4 +1288,27 @@ a.entity-name:hover {
   .dash-filter {
     width: 100%;
   }
+}
+
+/* ---------- Project cards ---------- */
+.project-card-client {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-card-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.project-card .badge.project-status {
+  flex-shrink: 0;
 }
