@@ -86,7 +86,7 @@ npm start       # serve a API e a interface em http://localhost:3001
 
 ## Funcionalidades
 
-- **Menu lateral** com grupos recolhíveis: Tarefas (Todas, Minhas, Pessoais, Arquivadas), Visão geral (Dashboard, Onboarding), Projetos, Clientes (ambos com cor, tarefas em aberto e atrasadas, filtro quando há muitos) e Equipe.
+- **Menu lateral** com grupos recolhíveis e animados: Tarefas (Todas, Minhas, Pessoais, Arquivadas), Visão geral (Dashboard, Onboarding), Projetos, Clientes (ambos com cor, tarefas em aberto e atrasadas, filtro quando há muitos) e Equipe. No computador, o menu pode ser recolhido para uma barra de ícones (botão no topo, « no próprio menu ou tecla `[`); a escolha fica salva no navegador. No celular, ele fecha sozinho ao navegar, ao criar algo ou com `Esc`.
 - **Projetos**: cada projeto tem nome, cor, cliente opcional, situação (Ativo, Pausado ou Concluído), descrição e um quadro próprio com Kanban, lista e calendário. Tarefas criadas no quadro já entram no projeto (e no cliente dele). Projetos concluídos saem do menu, mas continuam em **Gerenciar projetos → Concluídos**. Para levar tarefas existentes para um projeto, selecione-as (Ctrl+clique) e use **Projeto** na barra de ações em lote.
 - **Kanban** com cinco colunas (A Fazer, Em Andamento, Bloqueado, Homologação, Finalizado). Arrastar e soltar com mouse, toque (pressione e segure) e teclado (Espaço para pegar e soltar, setas para mover). Ao trocar de coluna, um aviso oferece **Desfazer**.
 - **Lista** com ordenação pelos cabeçalhos, troca de status na própria linha e seleção múltipla.
@@ -95,13 +95,17 @@ npm start       # serve a API e a interface em http://localhost:3001
 - **Histórico** automático de status, responsável, participantes, projeto, prazo, arquivamento e duplicação.
 - **Filtros** por cliente, projeto, responsável, status, prioridade, período de entrega e atrasadas; busca por título ou descrição (ignora acentos); ordenação por prazo, prioridade e data de criação. Os filtros ficam na URL, então dá para compartilhar o link de uma visão filtrada.
 - **Ações em lote**: Ctrl+clique nos cards (ou as caixas de seleção da lista) para mover, atribuir, colocar em um projeto, arquivar ou excluir várias tarefas.
-- **Dashboard** com indicadores, tarefas por status, concluídas por semana, distribuição por cliente, por projeto e por responsável, atrasadas e próximas entregas. Cada barra e indicador abre a lista de tarefas já filtrada; cada gráfico tem uma visualização em tabela.
+- **Dashboard** com quatro visões, todas filtráveis por cliente, projeto e responsável:
+  - **Dia, Semana e Mês** (com setas para navegar entre períodos): concluídas e criadas no período comparadas com o anterior, entregas previstas, percentual entregue no prazo, atrasadas, ritmo de conclusão por hora ou por dia, agenda (lista do dia, colunas da semana ou calendário do mês), resumo por responsável e o histórico de atividade da equipe. Clicar em um dia abre a visão daquele dia.
+  - **Geral**: tarefas por status, concluídas por semana, distribuição por cliente, por projeto e por responsável, atrasadas e próximas entregas.
+  
+  Cada indicador abre a lista de tarefas já filtrada, e cada gráfico tem uma visualização em tabela. A visão e o período ficam na URL.
 - **Onboarding de clientes**: gera as tarefas a partir de um modelo de etapas editável em Configurações, com prazos contados a partir da data de início, e mostra o progresso por cliente.
 - **Menções**: o sino no topo lista os comentários em que você foi mencionado.
 - **Temas claro e escuro** (ou seguindo o sistema). As cores de status foram validadas para daltonismo e contraste nos dois temas.
 - **Sincronização**: a cada 15 segundos (e ao voltar para a aba), o app verifica se alguém alterou os dados e atualiza a tela.
 
-Atalhos: `N` nova tarefa · `/` buscar · `V` alternar visualização · `Ctrl+S` salvar tarefa · `Ctrl+Enter` enviar comentário · `Esc` fechar.
+Atalhos: `N` nova tarefa · `/` buscar · `V` alternar visualização · `[` recolher o menu · `Ctrl+S` salvar tarefa · `Ctrl+Enter` enviar comentário · `Esc` fechar.
 
 ### Regras de consistência
 

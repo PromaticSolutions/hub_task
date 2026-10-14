@@ -15,6 +15,7 @@
   color: var(--sidebar-text);
   border-right: 1px solid var(--sidebar-border);
   z-index: 60;
+  overflow: hidden;
 }
 
 .sidebar-brand {
@@ -22,7 +23,7 @@
   align-items: center;
   gap: 11px;
   height: var(--topbar-h);
-  padding: 0 18px;
+  padding: 0 16px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--sidebar-border);
 }
@@ -38,12 +39,63 @@
   justify-content: center;
   gap: 3px;
   padding: 7px 6px;
+  flex-shrink: 0;
+  position: relative;
 }
 
 .brand-mark span {
   width: 5px;
   border-radius: 2px;
   background: var(--sidebar-accent);
+  transform-origin: top;
+  transition: opacity var(--fast) var(--ease);
+}
+
+/* The bars of the logo bounce like a little equalizer while the brand is hovered. */
+.sidebar-brand:hover .brand-mark span {
+  animation: brand-eq 1s var(--ease) infinite;
+}
+
+.sidebar-brand:hover .brand-mark span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.sidebar-brand:hover .brand-mark span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes brand-eq {
+  50% {
+    transform: scaleY(0.55);
+  }
+}
+
+.brand-expand {
+  cursor: pointer;
+}
+
+.brand-expand-icon {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  color: var(--sidebar-accent);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--fast) var(--ease),
+    transform var(--normal) var(--ease);
+}
+
+.brand-expand:hover span,
+.brand-expand:focus-visible span {
+  opacity: 0;
+  animation: none !important;
+}
+
+.brand-expand:hover .brand-expand-icon,
+.brand-expand:focus-visible .brand-expand-icon {
+  opacity: 1;
+  transform: none;
 }
 
 .brand-mark span:nth-child(1) {
@@ -63,6 +115,8 @@
   display: flex;
   flex-direction: column;
   line-height: 1.1;
+  white-space: nowrap;
+  transition: opacity var(--normal) var(--ease);
 }
 
 .brand-text strong {
@@ -86,7 +140,25 @@
   color: var(--sidebar-text);
 }
 
-.sidebar-close:hover {
+.sidebar-collapse {
+  margin-left: auto;
+  color: var(--sidebar-muted);
+  opacity: 0;
+  transform: translateX(4px);
+  transition:
+    opacity var(--fast) var(--ease),
+    transform var(--normal) var(--ease),
+    background-color var(--fast) var(--ease);
+}
+
+.sidebar:hover .sidebar-collapse,
+.sidebar-collapse:focus-visible {
+  opacity: 1;
+  transform: none;
+}
+
+.sidebar-close:hover,
+.sidebar-collapse:hover {
   background: var(--sidebar-hover) !important;
   color: #fff !important;
 }
@@ -101,10 +173,39 @@
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
+.nav-group {
+  animation: nav-in 420ms var(--ease) both;
+}
+
+.nav-group:nth-child(2) {
+  animation-delay: 50ms;
+}
+
+.nav-group:nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.nav-group:nth-child(4) {
+  animation-delay: 150ms;
+}
+
+.nav-group:nth-child(5) {
+  animation-delay: 200ms;
+}
+
+@keyframes nav-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
 .nav-group-head {
   display: flex;
   align-items: center;
   padding-right: 4px;
+  white-space: nowrap;
+  transition: opacity var(--normal) var(--ease);
 }
 
 .nav-group-toggle {
@@ -144,24 +245,51 @@
   color: var(--sidebar-muted);
   transition:
     background-color var(--fast) var(--ease),
-    color var(--fast) var(--ease);
+    color var(--fast) var(--ease),
+    transform var(--normal) var(--ease);
 }
 
 .nav-group-action:hover {
   background: var(--sidebar-hover);
   color: #fff;
+  transform: rotate(90deg);
 }
 
+/* Groups open and close by animating the grid row from 1fr to 0fr. */
 .nav-group-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  margin-top: 2px;
+  transition:
+    grid-template-rows 280ms var(--ease),
+    opacity 220ms var(--ease),
+    visibility 0s;
+}
+
+.nav-group-inner {
+  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-top: 2px;
-  animation: fade-in var(--normal) var(--ease);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+
+.nav-group.collapsed .nav-group-body {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 280ms var(--ease),
+    opacity 160ms var(--ease),
+    visibility 0s 280ms;
 }
 
 .nav-item {
   position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -171,6 +299,7 @@
   color: var(--sidebar-text);
   font-size: 13.5px;
   font-weight: 500;
+  white-space: nowrap;
   transition:
     background-color var(--fast) var(--ease),
     color var(--fast) var(--ease);
@@ -181,13 +310,31 @@
   color: #fff;
 }
 
+.nav-item:active {
+  transform: scale(0.985);
+}
+
 .nav-item.active {
-  background: var(--sidebar-active);
   color: var(--sidebar-active-text);
   font-weight: 600;
 }
 
-.nav-item.active::before {
+.nav-item.active:hover {
+  background: transparent;
+}
+
+/* The active highlight. With view transitions the browser morphs it from the old item to the new one. */
+.nav-pill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--sidebar-active), color-mix(in srgb, var(--sidebar-active) 55%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sidebar-accent) 16%, transparent);
+  view-transition-name: nav-pill;
+}
+
+.nav-pill::before {
   content: '';
   position: absolute;
   left: 0;
@@ -196,6 +343,20 @@
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--sidebar-accent);
+  box-shadow: 0 0 10px var(--sidebar-accent);
+}
+
+@supports not (view-transition-name: none) {
+  .nav-pill {
+    animation: pill-in var(--normal) var(--ease);
+  }
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.92);
+  }
 }
 
 .nav-item:focus-visible {
@@ -209,6 +370,9 @@
   width: 18px;
   flex-shrink: 0;
   color: var(--sidebar-muted);
+  transition:
+    color var(--fast) var(--ease),
+    transform var(--normal) var(--ease);
 }
 
 .nav-item:hover .nav-icon,
@@ -216,20 +380,40 @@
   color: var(--sidebar-accent);
 }
 
+.nav-item:hover .nav-icon {
+  transform: scale(1.12);
+}
+
 .nav-label {
   flex: 1;
+  transition: opacity var(--normal) var(--ease);
 }
 
 .nav-count {
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 650;
   color: var(--sidebar-muted);
-  min-width: 20px;
-  text-align: right;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease);
+}
+
+.nav-item:hover .nav-count {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sidebar-text);
 }
 
 .nav-item.active .nav-count {
-  color: var(--sidebar-text);
+  background: color-mix(in srgb, var(--sidebar-accent) 18%, transparent);
+  color: #fff;
 }
 
 .nav-alert {
@@ -322,6 +506,7 @@
 }
 
 .sidebar-user {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -351,6 +536,7 @@
   flex-direction: column;
   min-width: 0;
   line-height: 1.25;
+  transition: opacity var(--normal) var(--ease);
 }
 
 .sidebar-user-text strong {
@@ -370,6 +556,166 @@
 
 .sidebar-backdrop {
   display: none;
+}
+
+.rail-tip {
+  position: fixed;
+  left: calc(var(--rail-w) + 8px);
+  transform: translateY(-50%);
+  z-index: 200;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: #0b1f15;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  animation: tip-in var(--fast) var(--ease);
+}
+
+.rail-tip::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  transform: translateY(-50%) rotate(45deg);
+  border-radius: 2px;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translate(-4px, -50%);
+  }
+}
+
+/* ---------- Icon rail (desktop, collapsed) ---------- */
+@media (min-width: 1025px) {
+  .sidebar {
+    transition: width 280ms var(--ease);
+  }
+
+  .sidebar.rail {
+    width: var(--rail-w);
+  }
+
+  .sidebar.rail .brand-text,
+  .sidebar.rail .nav-label,
+  .sidebar.rail .nav-count,
+  .sidebar.rail .sidebar-user-text,
+  .sidebar.rail .nav-group-head > * {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .sidebar.rail .sidebar-nav,
+  .sidebar.rail .sidebar-footer {
+    padding-left: 13px;
+    padding-right: 13px;
+    scrollbar-width: none;
+  }
+
+  /* Group titles turn into thin separators; every group stays open in the rail. */
+  .sidebar.rail .nav-group-head {
+    height: 1px;
+    margin: 4px 6px 6px;
+    padding: 0;
+    overflow: hidden;
+    background: var(--sidebar-border);
+  }
+
+  .sidebar.rail .nav-group:first-child .nav-group-head {
+    display: none;
+  }
+
+  .sidebar.rail .nav-group.collapsed .nav-group-body {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .sidebar.rail .nav-search,
+  .sidebar.rail .nav-empty,
+  .sidebar.rail .nav-empty-text {
+    display: none;
+  }
+
+  .sidebar.rail .nav-entities {
+    scrollbar-width: none;
+  }
+
+  /* Late counts shrink to a red dot on the icon. */
+  .sidebar.rail .nav-alert {
+    position: absolute;
+    left: 25px;
+    top: 7px;
+    min-width: 9px;
+    width: 9px;
+    height: 9px;
+    padding: 0;
+    font-size: 0;
+    box-shadow: 0 0 0 2px var(--sidebar-bg);
+  }
+
+  .sidebar.rail .sidebar-user {
+    padding: 3px;
+    background: transparent;
+    outline: none;
+  }
+
+  .sidebar.rail .sidebar-user:hover {
+    background: var(--sidebar-hover);
+  }
+}
+
+/* Pages fade in when the route changes through the menu (view transitions). The name is only set while a
+   transition runs: a permanent one would make .content a stacking context and trap the Kanban drag overlay
+   below the sidebar. */
+:root:active-view-transition .content {
+  view-transition-name: page;
+}
+
+::view-transition-old(root) {
+  display: none;
+}
+
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(page) {
+  display: none;
+}
+
+::view-transition-new(page) {
+  animation: page-in 260ms var(--ease) both;
+  mix-blend-mode: normal;
+}
+
+::view-transition-group(nav-pill) {
+  animation-duration: 340ms;
+  animation-timing-function: cubic-bezier(0.3, 1.25, 0.4, 1);
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }
 
 /* ---------- Main ---------- */
@@ -395,7 +741,9 @@
 }
 
 .menu-btn {
-  display: none;
+  display: inline-flex;
+  margin-left: -6px;
+  color: var(--text-2);
 }
 
 .topbar-title {
@@ -583,9 +931,12 @@ code {
     transform: none;
   }
 
-  .sidebar-close,
-  .menu-btn {
+  .sidebar-close {
     display: inline-flex;
+  }
+
+  .sidebar-collapse {
+    display: none;
   }
 
   .sidebar-backdrop {

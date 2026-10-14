@@ -63,6 +63,9 @@ function useGlobalShortcuts() {
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
         openNewTask(useUi.getState().pageTaskDefaults);
+      } else if (e.key === '[') {
+        e.preventDefault();
+        usePrefs.getState().toggleSidebar();
       }
     };
     document.addEventListener('keydown', onKey);

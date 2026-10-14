@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { AtSign, Bell, Building2, CheckCheck, Menu, Moon, Plus, Settings, Sun, UserPlus } from 'lucide-react';
+import { AtSign, Bell, Building2, CheckCheck, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Settings, Sun, UserPlus } from 'lucide-react';
 import { useData } from '../../store/data';
 import { usePrefs, useUi } from '../../store/ui';
 import { useCurrentUser, useMembersById } from '../../hooks/useLookups';
 import { useTaskModal } from '../../hooks/useTaskModal';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { DESKTOP_QUERY } from './Sidebar';
 import { timeAgo } from '../../lib/dates';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, Popover } from '../ui/Popover';
@@ -185,15 +187,30 @@ function UserMenu() {
 export function Topbar() {
   const header = useUi((s) => s.header);
   const setSidebarOpen = useUi((s) => s.setSidebarOpen);
+  const collapsed = usePrefs((s) => s.sidebarCollapsed);
+  const toggleSidebar = usePrefs((s) => s.toggleSidebar);
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const openClientForm = useUi((s) => s.openClientForm);
   const openMemberForm = useUi((s) => s.openMemberForm);
   const { openNewTask } = useTaskModal();
 
   return (
     <header className="topbar">
-      <button type="button" className="icon-btn menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu">
-        <Menu size={20} />
-      </button>
+      {isDesktop ? (
+        <button
+          type="button"
+          className="icon-btn menu-btn"
+          onClick={toggleSidebar}
+          aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
+          title={`${collapsed ? 'Expandir' : 'Recolher'} menu ( [ )`}
+        >
+          {collapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+        </button>
+      ) : (
+        <button type="button" className="icon-btn menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu">
+          <Menu size={20} />
+        </button>
+      )}
       <div className="topbar-title">
         {header.color && <span className="title-dot" style={{ background: header.color }} />}
         <div className="truncate">

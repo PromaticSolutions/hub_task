@@ -10,15 +10,18 @@ interface PrefsState {
   currentUserId: string | null;
   views: Record<string, ViewMode>;
   collapsed: Record<string, boolean>;
+  /** Desktop only: the sidebar shrinks to an icon rail. */
+  sidebarCollapsed: boolean;
   mentionsSeenAt: string | null;
   setTheme: (theme: ThemePref) => void;
   setCurrentUser: (id: string | null) => void;
   setView: (key: string, view: ViewMode) => void;
   toggleGroup: (key: string) => void;
+  toggleSidebar: () => void;
   markMentionsSeen: () => void;
 }
 
-/** Per-browser preferences (theme, identity, chosen views). */
+/** Per-browser preferences (theme, identity, chosen views, sidebar state). */
 export const usePrefs = create<PrefsState>()(
   persist(
     (set) => ({
@@ -26,11 +29,13 @@ export const usePrefs = create<PrefsState>()(
       currentUserId: null,
       views: {},
       collapsed: {},
+      sidebarCollapsed: false,
       mentionsSeenAt: null,
       setTheme: (theme) => set({ theme }),
       setCurrentUser: (currentUserId) => set({ currentUserId, mentionsSeenAt: new Date().toISOString() }),
       setView: (key, view) => set((s) => ({ views: { ...s.views, [key]: view } })),
       toggleGroup: (key) => set((s) => ({ collapsed: { ...s.collapsed, [key]: !s.collapsed[key] } })),
+      toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       markMentionsSeen: () => set({ mentionsSeenAt: new Date().toISOString() }),
     }),
     { name: 'htt-prefs', version: 1 },

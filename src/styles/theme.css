@@ -66,6 +66,8 @@
   --st-done: #16a34a;
   --st-done-bg: #dcfce7;
   --st-done-text: #166534;
+  /* De-emphasis series in charts (validated against --st-done on the light surface). */
+  --chart-context: #7c8594;
 
   /* Priority */
   --pr-low: #475569;
@@ -94,6 +96,7 @@
   --normal: 220ms;
 
   --sidebar-w: 264px;
+  --rail-w: 64px;
   --topbar-h: 60px;
 }
 
@@ -161,6 +164,7 @@
   --st-done: #16a34a;
   --st-done-bg: rgba(74, 222, 128, 0.15);
   --st-done-text: #92f0b5;
+  --chart-context: #8b93a1;
 
   --pr-low: #c3ccd8;
   --pr-low-bg: rgba(148, 163, 184, 0.15);

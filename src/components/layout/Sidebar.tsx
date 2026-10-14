@@ -1,8 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useEffect, useMemo, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   Archive,
   ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
   ClipboardList,
   FolderKanban,
   Inbox,
@@ -20,9 +22,13 @@ import {
 import { useData } from '../../store/data';
 import { usePrefs, useUi } from '../../store/ui';
 import { useCurrentUser } from '../../hooks/useLookups';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { isOverdue, todayKey } from '../../lib/dates';
 import { Avatar } from '../ui/Avatar';
 import { ProjectIcon } from '../ui/Badges';
+
+/** Matches the CSS breakpoint where the sidebar turns into a drawer. */
+export const DESKTOP_QUERY = '(min-width: 1025px)';
 
 function Group({ id, label, children, action }: { id: string; label: string; children: ReactNode; action?: ReactNode }) {
   const collapsed = usePrefs((s) => !!s.collapsed[id]);
@@ -36,8 +42,9 @@ function Group({ id, label, children, action }: { id: string; label: string; chi
         </button>
         {action}
       </div>
-      <div className="nav-group-body" hidden={collapsed}>
-        {children}
+      {/* Animated with grid rows; collapsed bodies are hidden from focus and screen readers by CSS visibility. */}
+      <div className="nav-group-body">
+        <div className="nav-group-inner">{children}</div>
       </div>
     </div>
   );
@@ -60,15 +67,28 @@ function NavItem({
 }) {
   const close = useUi((s) => s.setSidebarOpen);
   return (
-    <NavLink to={to} end={end} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`} onClick={() => close(false)}>
-      <span className="nav-icon">{icon}</span>
-      <span className="nav-label truncate">{label}</span>
-      {!!alert && (
-        <span className="nav-alert" title={`${alert} atrasada(s)`}>
-          {alert}
-        </span>
+    <NavLink
+      to={to}
+      end={end}
+      viewTransition
+      onClick={() => close(false)}
+      className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+      data-tip={alert ? `${label} · ${alert} atrasada${alert === 1 ? '' : 's'}` : label}
+    >
+      {({ isActive }) => (
+        <>
+          {/* One pill exists at a time; the browser's view transition slides it to the new item. */}
+          {isActive && <span className="nav-pill" aria-hidden />}
+          <span className="nav-icon">{icon}</span>
+          <span className="nav-label truncate">{label}</span>
+          {!!alert && (
+            <span className="nav-alert" title={`${alert} atrasada(s)`}>
+              {alert}
+            </span>
+          )}
+          {count !== undefined && <span className="nav-count">{count}</span>}
+        </>
       )}
-      {count !== undefined && <span className="nav-count">{count}</span>}
     </NavLink>
   );
 }
@@ -112,6 +132,14 @@ function EntityNavList({ items, noun, emptyLabel, onCreate }: { items: EntityLin
   );
 }
 
+function GroupAction({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="nav-group-action" onClick={onClick} aria-label={label} title={label}>
+      <Plus size={15} />
+    </button>
+  );
+}
+
 export function Sidebar() {
   const tasks = useData((s) => s.tasks);
   const clients = useData((s) => s.clients);
@@ -123,6 +151,48 @@ export function Sidebar() {
   const openClientForm = useUi((s) => s.openClientForm);
   const openMemberForm = useUi((s) => s.openMemberForm);
   const openProjectForm = useUi((s) => s.openProjectForm);
+  const collapsed = usePrefs((s) => s.sidebarCollapsed);
+  const toggleSidebar = usePrefs((s) => s.toggleSidebar);
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
+  const rail = collapsed && isDesktop;
+  const location = useLocation();
+  const [tip, setTip] = useState<{ label: string; top: number } | null>(null);
+
+  // The mobile drawer closes on any navigation, including links outside the menu.
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname, setOpen]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, setOpen]);
+
+  useEffect(() => {
+    if (!rail) setTip(null);
+  }, [rail]);
+
+  /** Opens a form and closes the mobile drawer so the form isn't hidden behind it. */
+  const create = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+
+  // In the icon rail, labels are hidden, so hovering or focusing an item shows its name beside it.
+  const showTip = (e: MouseEvent | FocusEvent) => {
+    if (!rail) return;
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-tip]');
+    if (!el) {
+      setTip(null);
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    setTip({ label: el.dataset.tip ?? '', top: r.top + r.height / 2 });
+  };
 
   const counts = useMemo(() => {
     const today = todayKey();
@@ -188,17 +258,38 @@ export function Sidebar() {
   return (
     <>
       <div className={`sidebar-backdrop${open ? ' show' : ''}`} onClick={() => setOpen(false)} aria-hidden />
-      <aside className={`sidebar${open ? ' open' : ''}`} aria-label="Menu principal">
+      <aside
+        className={`sidebar${open ? ' open' : ''}${rail ? ' rail' : ''}`}
+        aria-label="Menu principal"
+        onMouseOver={showTip}
+        onMouseLeave={() => setTip(null)}
+        onFocus={showTip}
+        onBlur={() => setTip(null)}
+      >
         <div className="sidebar-brand">
-          <div className="brand-mark" aria-hidden>
-            <span />
-            <span />
-            <span />
-          </div>
+          {rail ? (
+            <button type="button" className="brand-mark brand-expand" onClick={toggleSidebar} aria-label="Expandir menu" data-tip="Expandir menu ( [ )">
+              <span />
+              <span />
+              <span />
+              <ChevronsRight size={16} className="brand-expand-icon" />
+            </button>
+          ) : (
+            <div className="brand-mark" aria-hidden>
+              <span />
+              <span />
+              <span />
+            </div>
+          )}
           <div className="brand-text">
             <strong>Hub Task</strong>
             <span>Timely</span>
           </div>
+          {!rail && (
+            <button type="button" className="icon-btn sidebar-collapse" onClick={toggleSidebar} aria-label="Recolher menu" title="Recolher menu ( [ )">
+              <ChevronsLeft size={17} />
+            </button>
+          )}
           <button type="button" className="icon-btn sidebar-close" onClick={() => setOpen(false)} aria-label="Fechar menu">
             <X size={18} />
           </button>
@@ -217,46 +308,22 @@ export function Sidebar() {
             <NavItem to="/onboarding" icon={<Rocket size={17} />} label="Onboarding" count={counts.onboarding} />
           </Group>
 
-          <Group
-            id="projects"
-            label="Projetos"
-            action={
-              <button type="button" className="nav-group-action" onClick={() => openProjectForm()} aria-label="Novo projeto" title="Novo projeto">
-                <Plus size={15} />
-              </button>
-            }
-          >
+          <Group id="projects" label="Projetos" action={<GroupAction label="Novo projeto" onClick={create(() => openProjectForm())} />}>
             <EntityNavList
               items={projectLinks}
               noun="projeto"
               emptyLabel={projects.length ? 'Novo projeto' : 'Criar primeiro projeto'}
-              onCreate={() => openProjectForm()}
+              onCreate={create(() => openProjectForm())}
             />
             <NavItem to="/projects" end icon={<FolderKanban size={17} />} label="Gerenciar projetos" />
           </Group>
 
-          <Group
-            id="clients"
-            label="Clientes"
-            action={
-              <button type="button" className="nav-group-action" onClick={() => openClientForm()} aria-label="Novo cliente" title="Novo cliente">
-                <Plus size={15} />
-              </button>
-            }
-          >
-            <EntityNavList items={clientLinks} noun="cliente" emptyLabel="Cadastrar primeiro cliente" onCreate={() => openClientForm()} />
+          <Group id="clients" label="Clientes" action={<GroupAction label="Novo cliente" onClick={create(() => openClientForm())} />}>
+            <EntityNavList items={clientLinks} noun="cliente" emptyLabel="Cadastrar primeiro cliente" onCreate={create(() => openClientForm())} />
             <NavItem to="/clients" end icon={<Building2 size={17} />} label="Gerenciar clientes" />
           </Group>
 
-          <Group
-            id="team"
-            label="Equipe"
-            action={
-              <button type="button" className="nav-group-action" onClick={() => openMemberForm()} aria-label="Novo membro" title="Novo membro">
-                <Plus size={15} />
-              </button>
-            }
-          >
+          <Group id="team" label="Equipe" action={<GroupAction label="Novo membro" onClick={create(() => openMemberForm())} />}>
             <NavItem to="/team" icon={<Users size={17} />} label="Membros" count={members.length} />
           </Group>
         </nav>
@@ -267,6 +334,7 @@ export function Sidebar() {
             to="/settings#identidade"
             className={`sidebar-user${!me ? ' warn' : ''}`}
             onClick={() => setOpen(false)}
+            data-tip={me ? `${me.name} · você` : 'Quem é você?'}
           >
             {me ? <Avatar member={me} size="md" /> : <span className="avatar md empty"><ClipboardList size={14} /></span>}
             <span className="sidebar-user-text">
@@ -275,6 +343,12 @@ export function Sidebar() {
             </span>
           </NavLink>
         </div>
+
+        {rail && tip && (
+          <div className="rail-tip" style={{ top: tip.top }} role="tooltip">
+            {tip.label}
+          </div>
+        )}
       </aside>
     </>
   );
